@@ -1,0 +1,30 @@
+# .gcloudignore
+# This file determines what files are uploaded to Google Cloud Build.
+# It overrides .gitignore.
+
+# Exclude git history
+.git/
+.gitignore
+
+# Exclude python build artifacts and cache
+__pycache__/
+*.py[cod]
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Exclude virtual environments
+venv/
+env/
+.env
+
+# Exclude IDE settings
+.vscode/
+.idea/
+
+# Exclude documentation
+docs/
+*.md
+
+# DO NOT EXCLUDE models/
+# We explicitly want the CSV models to be uploaded!

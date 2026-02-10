@@ -48,7 +48,10 @@ def load_forecast(location: str) -> pd.DataFrame:
     Raises:
         FileNotFoundError: If forecast file doesn't exist
     """
-    forecast_file = Path('models') / f'location_{location}_forecast.csv'
+    # Use absolute path based on this file's location
+    # This works both locally and in Docker/Cloud Run
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    forecast_file = base_dir / 'models' / f'location_{location}_forecast.csv'
     
     if not forecast_file.exists():
         raise FileNotFoundError(f"Forecast for location {location} not found")
