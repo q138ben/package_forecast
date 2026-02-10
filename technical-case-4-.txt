@@ -1,4 +1,4 @@
-As a data scientist at Insabee you would have to contribute by providing a lot of
+As a data scientist you would have to contribute by providing a lot of
 different forecasts that are used in our daily operation. In this case study we want to
 see how you approach and solve such problems.
 # Task
@@ -32,5 +32,5 @@ you to help us analyze the data, create forecasts and expose them.
   You can instead describe how the problem would be solved when given more time.
 * Add comments and explanations where relevant. It should be easy for us to go through
   the solution and understand your reasoning.
-*Note that we prefer that you avoid using AI to solve this problem. If you need to use
- AI for some assistance, please provide the chat sessions and your prompts.
+*Note that we prefer that you avoid using AI to solve this problem. So the code should be
+written in way that does not look like AI.
