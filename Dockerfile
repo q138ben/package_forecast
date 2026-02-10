@@ -10,8 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY models/ ./models/
 
-# Expose port
-EXPOSE 8000
+# Expose port (Cloud Run uses PORT environment variable)
+ENV PORT=8080
+EXPOSE 8080
 
-# Run the API
-CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the API using exec form and dynamic port
+CMD exec uvicorn src.api.app:app --host 0.0.0.0 --port ${PORT}
