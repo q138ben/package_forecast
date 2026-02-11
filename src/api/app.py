@@ -61,86 +61,46 @@ def load_forecast(location: str) -> pd.DataFrame:
 
 
 @app.get("/")
-async def root():
-    """Root endpoint with API information."""
-    return {
-        "name": "Package Forecast API",
-        "version": "1.0.0",
-        "endpoints": {
-            "/forecast/{location}": "Get 30-day forecast for a location (A, B, or C)",
-            "/health": "Health check endpoint"
-        }
-    }
-
-
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-
-@app.get("/forecast/{location}", response_model=ForecastResponse)
-async def get_forecast(location: str):
+async def root(location: Optional[str] = None, date: Optional[str] = None):
     """
-    Get 30-day package forecast for a specific location.
+    Root endpoint returns forecasts for all locations.
     
-    Args:
-        location: Location identifier (A, B, or C)
-        
-    Returns:
-        Forecast data with daily predictions and uncertainty intervals
-        
-    Example:
-        GET /forecast/A
+    Query Parameters:
+        location: Optional filter by location (A, B, or C)
+        date: Optional filter by date (format: YYYY-MM-DD)
+    
+    Examples:
+        GET /
+        GET /?location=A
+        GET /?date=2026-02-15
+        GET /?location=A&date=2026-02-15
     """
-    # Validate location
-    location = location.upper()
-    if location not in ['A', 'B', 'C']:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid location '{location}'. Must be A, B, or C."
-        )
+    # Determine which locations to fetch
+    if location:
+        location = location.upper()
+        if location not in ['A', 'B', 'C']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid location '{location}'. Must be A, B, or C."
+            )
+        locations_to_fetch = [location]
+    else:
+        locations_to_fetch = ['A', 'B', 'C']
     
-    # Load forecast
-    try:
-        forecast_df = load_forecast(location)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Forecast for location {location} not found. Please run training first."
-        )
-    
-    # Convert to response format
-    forecasts = []
-    for _, row in forecast_df.iterrows():
-        forecasts.append(ForecastPoint(
-            date=row['date'],
-            forecast=round(row['forecast'], 2),
-            lower_bound=round(row['lower_bound'], 2),
-            upper_bound=round(row['upper_bound'], 2)
-        ))
-    
-    return ForecastResponse(
-        location=location,
-        forecast_generated=datetime.now().isoformat(),
-        horizon_days=len(forecasts),
-        forecasts=forecasts
-    )
-
-
-@app.get("/forecasts/all")
-async def get_all_forecasts():
-    """
-    Get forecasts for all locations (A, B, and C).
-    
-    Returns:
-        Dictionary with forecasts for all available locations
-    """
     results = {}
     
-    for location in ['A', 'B', 'C']:
+    for loc in locations_to_fetch:
         try:
-            forecast_df = load_forecast(location)
+            forecast_df = load_forecast(loc)
+            
+            # Filter by date if provided
+            if date:
+                forecast_df = forecast_df[forecast_df['date'] == date]
+                if forecast_df.empty:
+                    results[loc] = {
+                        'error': f'No forecast found for date {date}'
+                    }
+                    continue
             
             forecasts = []
             for _, row in forecast_df.iterrows():
@@ -151,20 +111,57 @@ async def get_all_forecasts():
                     'upper_bound': round(row['upper_bound'], 2)
                 })
             
-            results[location] = {
-                'location': location,
+            results[loc] = {
                 'horizon_days': len(forecasts),
                 'forecasts': forecasts
             }
         except FileNotFoundError:
-            results[location] = {
-                'error': f'Forecast not available for location {location}'
+            results[loc] = {
+                'error': f'Forecast not available for location {loc}'
             }
     
     return {
         'forecast_generated': datetime.now().isoformat(),
+        'filters': {
+            'location': location,
+            'date': date
+        },
         'locations': results
     }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint (liveness)."""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/ready")
+async def ready():
+    """
+    Readiness check endpoint.
+    
+    Verifies the app is ready to serve requests by checking
+    if forecast data is available for all locations.
+    """
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    missing = []
+    
+    for location in ['A', 'B', 'C']:
+        forecast_file = base_dir / 'models' / f'location_{location}_forecast.csv'
+        if not forecast_file.exists():
+            missing.append(location)
+    
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Not ready: missing forecasts for locations {missing}"
+        )
+    
+    return {"status": "ready", "timestamp": datetime.now().isoformat()}
+
+
+
 
 
 if __name__ == '__main__':
