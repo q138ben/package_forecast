@@ -21,10 +21,11 @@ def train():
         if 'error' in result:
             print(f"Location {location}: ❌ Failed - {result['error']}")
         else:
-            metrics = result['metrics']
+            cv = result['cv_metrics']
+            test = result['test_metrics']
             print(f"Location {location}: ✓ Success")
-            print(f"  RMSE: {metrics['rmse']:.2f}")
-            print(f"  MAPE: {metrics['mape']:.2f}%")
+            print(f"  CV ({cv['n_folds']}-fold): RMSE={cv['avg_rmse']:.2f}±{cv['std_rmse']:.2f}, MAPE={cv['avg_mape']:.2f}%±{cv['std_mape']:.2f}%")
+            print(f"  Final Test:  RMSE={test['rmse']:.2f}, MAPE={test['mape']:.2f}%")
 
 
 def serve():
