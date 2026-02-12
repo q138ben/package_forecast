@@ -14,6 +14,37 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from src.models.prophet_model import create_prophet_model
 
 
+def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df['ds'] = pd.to_datetime(df['ds'])
+    weekday = df['ds'].dt.weekday
+    df['is_weekend'] = (weekday >= 5).astype(int)
+    df['is_saturday'] = (weekday == 5).astype(int)
+    df['is_sunday'] = (weekday == 6).astype(int)
+    return df
+
+
+def _prepare_prophet_predict_df(model: Prophet, df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare a dataframe for Prophet predict() including required regressors."""
+    predict_df = df.copy()
+    predict_df['ds'] = pd.to_datetime(predict_df['ds'])
+
+    extra_regressors = getattr(model, 'extra_regressors', {}) or {}
+    required = list(extra_regressors.keys())
+    for regressor_name in required:
+        if regressor_name in predict_df.columns:
+            continue
+        if regressor_name in {'is_weekend', 'is_saturday', 'is_sunday'}:
+            predict_df = _add_is_weekend(predict_df)
+            continue
+        raise ValueError(
+            f"Missing required regressor column '{regressor_name}' for Prophet predict()."
+        )
+
+    cols = ['ds'] + required
+    return predict_df[cols]
+
+
 def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
     """
     Evaluate model performance on test data.
@@ -26,7 +57,8 @@ def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
         Dictionary with RMSE, MAE, WAPE, and interval coverage metrics
     """
     # Generate predictions for test period
-    forecast = model.predict(test_df[['ds']])
+    predict_df = _prepare_prophet_predict_df(model, test_df)
+    forecast = model.predict(predict_df)
     
     # Calculate metrics
     y_true = test_df['y'].values
@@ -277,6 +309,10 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         
         train_df = df.iloc[train_start:train_end].copy()
         val_df = df.iloc[val_start:val_end].copy()
+
+        # Add derived regressors used by the model
+        train_df = _add_is_weekend(train_df)
+        val_df = _add_is_weekend(val_df)
         
         # Train model on this fold
         model = create_prophet_model(location, len(train_df), verbose=False)

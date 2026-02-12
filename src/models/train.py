@@ -22,6 +22,16 @@ from src.data.splits import split_train_test, save_data_splits
 from src.visualization.plots import plot_forecast_vs_actual
 
 
+def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df['ds'] = pd.to_datetime(df['ds'])
+    weekday = df['ds'].dt.weekday
+    df['is_weekend'] = (weekday >= 5).astype(int)
+    df['is_saturday'] = (weekday == 5).astype(int)
+    df['is_sunday'] = (weekday == 6).astype(int)
+    return df
+
+
 def train_location_model(location: str, data_path: str, 
                         output_dir: str = 'models',
                         n_cv_folds: int = 5,
@@ -63,6 +73,10 @@ def train_location_model(location: str, data_path: str,
     
     # Step 2: Split into train/test
     train_df, test_df = split_train_test(location_df, test_size=test_size)
+
+    # Derived regressor(s) used by Prophet
+    train_df = _add_is_weekend(train_df)
+    test_df = _add_is_weekend(test_df)
     
     print(f"\nFinal Train/Test Split:")
     print(f"  Train: {len(train_df)} days ({train_df.iloc[0]['ds'].strftime('%Y-%m-%d')} to {train_df.iloc[-1]['ds'].strftime('%Y-%m-%d')})")
@@ -94,11 +108,16 @@ def train_location_model(location: str, data_path: str,
     
     # Step 6: Retrain on full dataset for production forecast
     print(f"\nRetraining on full dataset for production...")
+    location_df = _add_is_weekend(location_df)
     final_model = create_prophet_model(location, len(location_df))
     final_model.fit(location_df)
     
     # Step 7: Generate forecast including historical period for visualization
     future = final_model.make_future_dataframe(periods=30)
+    weekday = pd.to_datetime(future['ds']).dt.weekday
+    future['is_weekend'] = (weekday >= 5).astype(int)
+    future['is_saturday'] = (weekday == 5).astype(int)
+    future['is_sunday'] = (weekday == 6).astype(int)
     full_forecast = final_model.predict(future)
     
     # Step 8: Create visualization
