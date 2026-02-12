@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
+from src.models.evaluate import seasonal_naive_forecast
+
 
 def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.DataFrame,
                             forecast: pd.DataFrame, output_dir: str = 'models',
@@ -45,6 +47,21 @@ def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.D
     test_actual_color = '#E94F37'
     forecast_color = '#28A745'
     ci_color = '#28A745'
+    baseline_color = '#8E44AD'
+    
+    # Compute baseline forecast for test + future period
+    horizon = len(test_df) + len(forecast[forecast['ds'] > test_df['ds'].max()])
+    baseline_pred, baseline_lower, baseline_upper = seasonal_naive_forecast(
+        train_df, horizon, return_intervals=True
+    )
+    
+    # Split baseline into test and future periods
+    baseline_test_pred = baseline_pred[:len(test_df)]
+    baseline_test_lower = baseline_lower[:len(test_df)]
+    baseline_test_upper = baseline_upper[:len(test_df)]
+    baseline_future_pred = baseline_pred[len(test_df):]
+    baseline_future_lower = baseline_lower[len(test_df):]
+    baseline_future_upper = baseline_upper[len(test_df):]
     
     # --- Plot 1: Full View ---
     ax1 = axes[0]
@@ -71,6 +88,15 @@ def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.D
                         future_forecast['yhat_lower'], 
                         future_forecast['yhat_upper'],
                         color=ci_color, alpha=0.2, label='95% CI')
+    
+    # Baseline forecast overlay
+    ax1.plot(test_df['ds'], baseline_test_pred, 
+             color=baseline_color, linewidth=1.5, linestyle=':', 
+             marker='^', markersize=3, label='Baseline (Seasonal Naive)', alpha=0.8)
+    if len(future_forecast) > 0:
+        ax1.plot(future_forecast['ds'], baseline_future_pred, 
+                 color=baseline_color, linewidth=1.5, linestyle=':', 
+                 marker='^', markersize=3, alpha=0.8)
     
     # Mark test period
     ax1.axvline(x=test_df['ds'].min(), color='gray', linestyle=':', alpha=0.7)
@@ -102,6 +128,13 @@ def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.D
                     test_forecast['yhat_upper'],
                     color=ci_color, alpha=0.2, label='95% CI')
     
+    # Baseline forecast overlay on test period
+    ax2.plot(test_df['ds'], baseline_test_pred, 
+             color=baseline_color, linewidth=1.5, linestyle=':', 
+             marker='^', markersize=4, label='Baseline', alpha=0.8)
+    ax2.fill_between(test_df['ds'], baseline_test_lower, baseline_test_upper,
+                    color=baseline_color, alpha=0.1)
+    
     # Calculate and display metrics
     y_true = test_df['y'].values
     y_pred = test_forecast['yhat'].values
@@ -115,12 +148,25 @@ def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.D
         coverage = np.mean((y_true >= lower) & (y_true <= upper)) * 100
     else:
         coverage = np.nan
+    
+    # Calculate baseline metrics
+    baseline_rmse = np.sqrt(mean_squared_error(y_true, baseline_test_pred))
+    baseline_mae = mean_absolute_error(y_true, baseline_test_pred)
+    baseline_wape = (np.sum(np.abs(y_true - baseline_test_pred)) / denominator * 100) if denominator != 0 else np.nan
+    baseline_coverage = np.mean((y_true >= baseline_test_lower) & (y_true <= baseline_test_upper)) * 100
+    baseline_width = np.mean(baseline_test_upper - baseline_test_lower)
 
     metrics_text = (
-        f'RMSE: {rmse:.2f}\n'
-        f'MAE: {mae:.2f}\n'
-        f'WAPE: {wape:.2f}%\n'
-        f'Coverage: {coverage:.1f}%'
+        f'Prophet:\n'
+        f'  RMSE: {rmse:.2f}\n'
+        f'  MAE: {mae:.2f}\n'
+        f'  WAPE: {wape:.2f}%\n'
+        f'  Coverage: {coverage:.1f}%\n\n'
+        f'Baseline:\n'
+        f'  RMSE: {baseline_rmse:.2f}\n'
+        f'  MAE: {baseline_mae:.2f}\n'
+        f'  WAPE: {baseline_wape:.2f}%\n'
+        f'  Coverage: {baseline_coverage:.1f}%'
     )
     ax2.text(0.02, 0.98, metrics_text, transform=ax2.transAxes, fontsize=11,
              verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
