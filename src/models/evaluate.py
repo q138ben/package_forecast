@@ -54,6 +54,81 @@ def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
     }
 
 
+def seasonal_naive_forecast(train_df: pd.DataFrame, horizon: int,
+                            seasonal_period: int = 7,
+                            return_intervals: bool = False,
+                            alpha: float = 0.05):
+    """Generate a seasonal naive forecast for a given horizon."""
+    if horizon <= 0:
+        if return_intervals:
+            empty = np.array([], dtype=float)
+            return empty, empty, empty
+        return np.array([], dtype=float)
+
+    history = train_df['y'].values
+    if history.size == 0:
+        raise ValueError("Training data must contain at least one observation for baseline forecast.")
+
+    if history.size >= seasonal_period and seasonal_period > 0:
+        pattern = history[-seasonal_period:]
+    else:
+        pattern = history[-1:]
+
+    reps = int(np.ceil(horizon / pattern.size))
+    forecast_values = np.tile(pattern, reps)[:horizon].astype(float)
+
+    if not return_intervals:
+        return forecast_values
+
+    if history.size > seasonal_period:
+        residuals = history[seasonal_period:] - history[:-seasonal_period]
+    else:
+        residuals = np.array([], dtype=float)
+
+    if residuals.size >= 2:
+        lower_adj = np.percentile(residuals, (alpha / 2) * 100)
+        upper_adj = np.percentile(residuals, (1 - alpha / 2) * 100)
+        lower = forecast_values + lower_adj
+        upper = forecast_values + upper_adj
+    else:
+        lower = np.full(forecast_values.shape, np.nan, dtype=float)
+        upper = np.full(forecast_values.shape, np.nan, dtype=float)
+
+    return forecast_values, lower.astype(float), upper.astype(float)
+
+
+def evaluate_naive_baseline(train_df: pd.DataFrame, test_df: pd.DataFrame,
+                            seasonal_period: int = 7) -> Dict[str, float]:
+    """Evaluate a seasonal naive baseline on the test split."""
+    if test_df.empty:
+        return {
+            'rmse': float('nan'),
+            'mae': float('nan'),
+            'wape': float('nan'),
+            'interval_coverage': float('nan'),
+            'avg_interval_width': float('nan')
+        }
+
+    y_true = test_df['y'].values
+    y_pred, lower, upper = seasonal_naive_forecast(
+        train_df,
+        len(test_df),
+        seasonal_period=seasonal_period,
+        return_intervals=True
+    )
+    metrics = calculate_metrics(y_true, y_pred)
+    valid_mask = ~np.isnan(lower) & ~np.isnan(upper)
+    if np.any(valid_mask):
+        coverage = np.mean((y_true[valid_mask] >= lower[valid_mask]) & (y_true[valid_mask] <= upper[valid_mask])) * 100
+        interval_width = np.mean(upper[valid_mask] - lower[valid_mask])
+        metrics['interval_coverage'] = float(coverage)
+        metrics['avg_interval_width'] = float(interval_width)
+    else:
+        metrics['interval_coverage'] = float('nan')
+        metrics['avg_interval_width'] = float('nan')
+    return metrics
+
+
 def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """
     Calculate forecast evaluation metrics.
@@ -168,7 +243,17 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         'std_mae': 0.0,
         'std_wape': 0.0,
         'std_interval_coverage': 0.0,
-        'std_interval_width': 0.0
+        'std_interval_width': 0.0,
+        'baseline_avg_rmse': 0.0,
+        'baseline_avg_mae': 0.0,
+        'baseline_avg_wape': 0.0,
+        'baseline_avg_interval_coverage': 0.0,
+        'baseline_avg_interval_width': 0.0,
+        'baseline_std_rmse': 0.0,
+        'baseline_std_mae': 0.0,
+        'baseline_std_wape': 0.0,
+        'baseline_std_interval_coverage': 0.0,
+        'baseline_std_interval_width': 0.0
     }
     
     all_rmse = []
@@ -176,6 +261,11 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
     all_wape = []
     all_cov = []
     all_width = []
+    baseline_rmse = []
+    baseline_mae = []
+    baseline_wape = []
+    baseline_cov = []
+    baseline_width = []
     
     if verbose:
         print(f"\n  Running {len(splits)}-fold Time Series Cross-Validation...")
@@ -194,10 +284,12 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         
         # Evaluate
         metrics = evaluate_model(model, val_df)
+        baseline_metrics = evaluate_naive_baseline(train_df, val_df)
         
         fold_result = {
             **split,
-            'metrics': metrics
+            'metrics': metrics,
+            'baseline_metrics': baseline_metrics
         }
         cv_results['folds'].append(fold_result)
         
@@ -206,12 +298,19 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         all_wape.append(metrics['wape'])
         all_cov.append(metrics['interval_coverage'])
         all_width.append(metrics['avg_interval_width'])
+        baseline_rmse.append(baseline_metrics['rmse'])
+        baseline_mae.append(baseline_metrics['mae'])
+        baseline_wape.append(baseline_metrics['wape'])
+        baseline_cov.append(baseline_metrics['interval_coverage'])
+        baseline_width.append(baseline_metrics['avg_interval_width'])
         
         if verbose:
             print(f"    Fold {fold}: Train {split['train_dates'][0]} to {split['train_dates'][1]} "
                   f"| Val {split['val_dates'][0]} to {split['val_dates'][1]} "
                   f"| RMSE: {metrics['rmse']:.2f} | MAE: {metrics['mae']:.2f} "
-                  f"| WAPE: {metrics['wape']:.2f}% | Coverage: {metrics['interval_coverage']:.1f}%")
+                  f"| WAPE: {metrics['wape']:.2f}% | Coverage: {metrics['interval_coverage']:.1f}% "
+                  f"| Baseline RMSE: {baseline_metrics['rmse']:.2f} | Baseline WAPE: {baseline_metrics['wape']:.2f}% "
+                  f"| Baseline Coverage: {baseline_metrics['interval_coverage']:.1f}%")
     
     if not all_rmse:
         nan_values = {
@@ -224,7 +323,17 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
             'std_mae': float('nan'),
             'std_wape': float('nan'),
             'std_interval_coverage': float('nan'),
-            'std_interval_width': float('nan')
+            'std_interval_width': float('nan'),
+            'baseline_avg_rmse': float('nan'),
+            'baseline_avg_mae': float('nan'),
+            'baseline_avg_wape': float('nan'),
+            'baseline_avg_interval_coverage': float('nan'),
+            'baseline_avg_interval_width': float('nan'),
+            'baseline_std_rmse': float('nan'),
+            'baseline_std_mae': float('nan'),
+            'baseline_std_wape': float('nan'),
+            'baseline_std_interval_coverage': float('nan'),
+            'baseline_std_interval_width': float('nan')
         }
         cv_results.update(nan_values)
         return cv_results
@@ -240,13 +349,25 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
     cv_results['std_wape'] = float(np.nanstd(all_wape))
     cv_results['std_interval_coverage'] = float(np.nanstd(all_cov))
     cv_results['std_interval_width'] = float(np.nanstd(all_width))
+    cv_results['baseline_avg_rmse'] = float(np.mean(baseline_rmse))
+    cv_results['baseline_avg_mae'] = float(np.mean(baseline_mae))
+    cv_results['baseline_avg_wape'] = float(np.nanmean(baseline_wape))
+    cv_results['baseline_avg_interval_coverage'] = float(np.nanmean(baseline_cov))
+    cv_results['baseline_avg_interval_width'] = float(np.nanmean(baseline_width))
+    cv_results['baseline_std_rmse'] = float(np.std(baseline_rmse))
+    cv_results['baseline_std_mae'] = float(np.std(baseline_mae))
+    cv_results['baseline_std_wape'] = float(np.nanstd(baseline_wape))
+    cv_results['baseline_std_interval_coverage'] = float(np.nanstd(baseline_cov))
+    cv_results['baseline_std_interval_width'] = float(np.nanstd(baseline_width))
     
     if verbose:
         print(
             f"\n  CV Summary: RMSE = {cv_results['avg_rmse']:.2f} ± {cv_results['std_rmse']:.2f} | "
             f"MAE = {cv_results['avg_mae']:.2f} ± {cv_results['std_mae']:.2f} | "
             f"WAPE = {cv_results['avg_wape']:.2f}% ± {cv_results['std_wape']:.2f}% | "
-            f"Coverage = {cv_results['avg_interval_coverage']:.1f}% ± {cv_results['std_interval_coverage']:.1f}%"
+            f"Coverage = {cv_results['avg_interval_coverage']:.1f}% ± {cv_results['std_interval_coverage']:.1f}% | "
+            f"Baseline RMSE = {cv_results['baseline_avg_rmse']:.2f} ± {cv_results['baseline_std_rmse']:.2f} | "
+            f"Baseline Coverage = {cv_results['baseline_avg_interval_coverage']:.1f}% ± {cv_results['baseline_std_interval_coverage']:.1f}%"
         )
     
     return cv_results

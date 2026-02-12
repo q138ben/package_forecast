@@ -23,6 +23,8 @@ def train():
         else:
             cv = result['cv_metrics']
             test = result['test_metrics']
+            baseline_cv = result.get('baseline_cv_metrics', {})
+            baseline_test = result.get('baseline_test_metrics', {})
             print(f"Location {location}: ✓ Success")
             print(
                 f"  CV ({cv['n_folds']}-fold): RMSE={cv['avg_rmse']:.2f}±{cv['std_rmse']:.2f}, "
@@ -30,10 +32,23 @@ def train():
                 f"WAPE={cv['avg_wape']:.2f}%±{cv['std_wape']:.2f}%, "
                 f"Coverage={cv['avg_interval_coverage']:.1f}%±{cv['std_interval_coverage']:.1f}%"
             )
+            if baseline_cv:
+                print(
+                    f"  CV Baseline: RMSE={baseline_cv['avg_rmse']:.2f}±{baseline_cv['std_rmse']:.2f}, "
+                    f"MAE={baseline_cv['avg_mae']:.2f}±{baseline_cv['std_mae']:.2f}, "
+                    f"WAPE={baseline_cv['avg_wape']:.2f}%±{baseline_cv['std_wape']:.2f}%, "
+                    f"Coverage={baseline_cv['avg_interval_coverage']:.1f}%±{baseline_cv['std_interval_coverage']:.1f}%"
+                )
             print(
                 f"  Final Test:  RMSE={test['rmse']:.2f}, MAE={test['mae']:.2f}, "
                 f"WAPE={test['wape']:.2f}%, Coverage={test['interval_coverage']:.1f}%"
             )
+            if baseline_test:
+                print(
+                    f"  Final Test Baseline: RMSE={baseline_test['rmse']:.2f}, "
+                    f"MAE={baseline_test['mae']:.2f}, WAPE={baseline_test['wape']:.2f}%, "
+                    f"Coverage={baseline_test['interval_coverage']:.1f}%"
+                )
 
 
 def serve():

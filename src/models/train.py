@@ -13,7 +13,11 @@ import pandas as pd
 
 from src.processing.cleaning import load_raw_data, prepare_location_data
 from src.models.prophet_model import create_prophet_model
-from src.models.evaluate import evaluate_model, run_time_series_cv
+from src.models.evaluate import (
+    evaluate_model,
+    evaluate_naive_baseline,
+    run_time_series_cv,
+)
 from src.data.splits import split_train_test, save_data_splits
 from src.visualization.plots import plot_forecast_vs_actual
 
@@ -73,11 +77,17 @@ def train_location_model(location: str, data_path: str,
     model.fit(train_df)
     
     test_metrics = evaluate_model(model, test_df)
+    baseline_test_metrics = evaluate_naive_baseline(train_df, test_df)
     print(f"\nFinal Test Performance (Holdout):")
     print(f"  RMSE: {test_metrics['rmse']:.2f} packages")
     print(f"  MAE: {test_metrics['mae']:.2f} packages")
     print(f"  WAPE: {test_metrics['wape']:.2f}%")
     print(f"  Interval coverage: {test_metrics['interval_coverage']:.1f}%")
+    print(
+        f"  Baseline (seasonal naive): RMSE={baseline_test_metrics['rmse']:.2f}, "
+        f"MAE={baseline_test_metrics['mae']:.2f}, WAPE={baseline_test_metrics['wape']:.2f}% "
+        f"Coverage={baseline_test_metrics['interval_coverage']:.1f}%"
+    )
     
     # Step 5: Save data splits for reproducibility
     splits_file = save_data_splits(location, train_df, test_df, cv_results, output_dir)
@@ -131,7 +141,21 @@ def train_location_model(location: str, data_path: str,
             'std_interval_width': cv_results['std_interval_width'],
             'n_folds': cv_results['n_folds']
         },
+        'baseline_cv_metrics': {
+            'avg_rmse': cv_results['baseline_avg_rmse'],
+            'avg_mae': cv_results['baseline_avg_mae'],
+            'avg_wape': cv_results['baseline_avg_wape'],
+            'avg_interval_coverage': cv_results['baseline_avg_interval_coverage'],
+            'avg_interval_width': cv_results['baseline_avg_interval_width'],
+            'std_rmse': cv_results['baseline_std_rmse'],
+            'std_mae': cv_results['baseline_std_mae'],
+            'std_wape': cv_results['baseline_std_wape'],
+            'std_interval_coverage': cv_results['baseline_std_interval_coverage'],
+            'std_interval_width': cv_results['baseline_std_interval_width'],
+            'n_folds': cv_results['n_folds']
+        },
         'test_metrics': test_metrics,
+        'baseline_test_metrics': baseline_test_metrics,
         'forecast_file': str(forecast_file),
         'model_file': str(model_file),
         'splits_file': splits_file,
