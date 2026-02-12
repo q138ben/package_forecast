@@ -75,7 +75,9 @@ def train_location_model(location: str, data_path: str,
     test_metrics = evaluate_model(model, test_df)
     print(f"\nFinal Test Performance (Holdout):")
     print(f"  RMSE: {test_metrics['rmse']:.2f} packages")
-    print(f"  MAPE: {test_metrics['mape']:.2f}%")
+    print(f"  MAE: {test_metrics['mae']:.2f} packages")
+    print(f"  WAPE: {test_metrics['wape']:.2f}%")
+    print(f"  Interval coverage: {test_metrics['interval_coverage']:.1f}%")
     
     # Step 5: Save data splits for reproducibility
     splits_file = save_data_splits(location, train_df, test_df, cv_results, output_dir)
@@ -118,9 +120,15 @@ def train_location_model(location: str, data_path: str,
         'metadata': metadata,
         'cv_metrics': {
             'avg_rmse': cv_results['avg_rmse'],
-            'avg_mape': cv_results['avg_mape'],
+            'avg_mae': cv_results['avg_mae'],
+            'avg_wape': cv_results['avg_wape'],
+            'avg_interval_coverage': cv_results['avg_interval_coverage'],
+            'avg_interval_width': cv_results['avg_interval_width'],
             'std_rmse': cv_results['std_rmse'],
-            'std_mape': cv_results['std_mape'],
+            'std_mae': cv_results['std_mae'],
+            'std_wape': cv_results['std_wape'],
+            'std_interval_coverage': cv_results['std_interval_coverage'],
+            'std_interval_width': cv_results['std_interval_width'],
             'n_folds': cv_results['n_folds']
         },
         'test_metrics': test_metrics,

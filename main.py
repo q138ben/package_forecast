@@ -24,8 +24,16 @@ def train():
             cv = result['cv_metrics']
             test = result['test_metrics']
             print(f"Location {location}: ✓ Success")
-            print(f"  CV ({cv['n_folds']}-fold): RMSE={cv['avg_rmse']:.2f}±{cv['std_rmse']:.2f}, MAPE={cv['avg_mape']:.2f}%±{cv['std_mape']:.2f}%")
-            print(f"  Final Test:  RMSE={test['rmse']:.2f}, MAPE={test['mape']:.2f}%")
+            print(
+                f"  CV ({cv['n_folds']}-fold): RMSE={cv['avg_rmse']:.2f}±{cv['std_rmse']:.2f}, "
+                f"MAE={cv['avg_mae']:.2f}±{cv['std_mae']:.2f}, "
+                f"WAPE={cv['avg_wape']:.2f}%±{cv['std_wape']:.2f}%, "
+                f"Coverage={cv['avg_interval_coverage']:.1f}%±{cv['std_interval_coverage']:.1f}%"
+            )
+            print(
+                f"  Final Test:  RMSE={test['rmse']:.2f}, MAE={test['mae']:.2f}, "
+                f"WAPE={test['wape']:.2f}%, Coverage={test['interval_coverage']:.1f}%"
+            )
 
 
 def serve():
