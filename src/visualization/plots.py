@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 
 def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.DataFrame,
@@ -103,10 +103,25 @@ def plot_forecast_vs_actual(location: str, train_df: pd.DataFrame, test_df: pd.D
                     color=ci_color, alpha=0.2, label='95% CI')
     
     # Calculate and display metrics
-    rmse = np.sqrt(mean_squared_error(test_df['y'], test_forecast['yhat']))
-    mape = mean_absolute_percentage_error(test_df['y'], test_forecast['yhat']) * 100
-    
-    metrics_text = f'RMSE: {rmse:.2f}\nMAPE: {mape:.2f}%'
+    y_true = test_df['y'].values
+    y_pred = test_forecast['yhat'].values
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mae = mean_absolute_error(y_true, y_pred)
+    denominator = np.sum(np.abs(y_true))
+    wape = (np.sum(np.abs(y_true - y_pred)) / denominator * 100) if denominator != 0 else np.nan
+    if {'yhat_lower', 'yhat_upper'}.issubset(test_forecast.columns):
+        lower = test_forecast['yhat_lower'].values
+        upper = test_forecast['yhat_upper'].values
+        coverage = np.mean((y_true >= lower) & (y_true <= upper)) * 100
+    else:
+        coverage = np.nan
+
+    metrics_text = (
+        f'RMSE: {rmse:.2f}\n'
+        f'MAE: {mae:.2f}\n'
+        f'WAPE: {wape:.2f}%\n'
+        f'Coverage: {coverage:.1f}%'
+    )
     ax2.text(0.02, 0.98, metrics_text, transform=ax2.transAxes, fontsize=11,
              verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
@@ -155,9 +170,11 @@ def plot_cv_results(cv_results: dict, location: str, output_dir: str = 'models',
     folds = cv_results['folds']
     fold_nums = [f['fold'] for f in folds]
     rmse_values = [f['metrics']['rmse'] for f in folds]
-    mape_values = [f['metrics']['mape'] for f in folds]
-    
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    mae_values = [f['metrics']['mae'] for f in folds]
+    wape_values = [f['metrics']['wape'] for f in folds]
+    coverage_values = [f['metrics']['interval_coverage'] for f in folds]
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
     
     # RMSE by fold
     ax1 = axes[0]
@@ -174,20 +191,64 @@ def plot_cv_results(cv_results: dict, location: str, output_dir: str = 'models',
     ax1.legend()
     ax1.set_xticks(fold_nums)
     
-    # MAPE by fold
+    # MAE by fold
     ax2 = axes[1]
-    bars2 = ax2.bar(fold_nums, mape_values, color='#28A745', alpha=0.8)
-    ax2.axhline(y=cv_results['avg_mape'], color='red', linestyle='--', 
-                label=f"Mean: {cv_results['avg_mape']:.2f}%")
-    ax2.fill_between([0.5, len(fold_nums) + 0.5], 
-                     cv_results['avg_mape'] - cv_results['std_mape'],
-                     cv_results['avg_mape'] + cv_results['std_mape'],
-                     color='red', alpha=0.1, label=f"±1 Std: {cv_results['std_mape']:.2f}%")
+    bars2 = ax2.bar(fold_nums, mae_values, color='#28A745', alpha=0.8)
+    ax2.axhline(
+        y=cv_results['avg_mae'],
+        color='red',
+        linestyle='--',
+        label=f"Mean: {cv_results['avg_mae']:.2f}"
+    )
+    ax2.fill_between(
+        [0.5, len(fold_nums) + 0.5],
+        cv_results['avg_mae'] - cv_results['std_mae'],
+        cv_results['avg_mae'] + cv_results['std_mae'],
+        color='red',
+        alpha=0.1,
+        label=f"±1 Std: {cv_results['std_mae']:.2f}"
+    )
     ax2.set_xlabel('Fold')
-    ax2.set_ylabel('MAPE (%)')
-    ax2.set_title(f'Location {location}: MAPE by CV Fold')
+    ax2.set_ylabel('MAE')
+    ax2.set_title(f'Location {location}: MAE by CV Fold')
     ax2.legend()
     ax2.set_xticks(fold_nums)
+
+    # WAPE by fold with coverage overlay
+    ax3 = axes[2]
+    bars3 = ax3.bar(fold_nums, wape_values, color='#1ABC9C', alpha=0.8, label='WAPE')
+    ax3.axhline(
+        y=cv_results['avg_wape'],
+        color='red',
+        linestyle='--',
+        label=f"Mean: {cv_results['avg_wape']:.2f}%"
+    )
+    ax3.fill_between(
+        [0.5, len(fold_nums) + 0.5],
+        cv_results['avg_wape'] - cv_results['std_wape'],
+        cv_results['avg_wape'] + cv_results['std_wape'],
+        color='red',
+        alpha=0.1,
+        label=f"±1 Std: {cv_results['std_wape']:.2f}%"
+    )
+    ax3.set_xlabel('Fold')
+    ax3.set_ylabel('WAPE (%)')
+    ax3.set_title(f'Location {location}: WAPE & Coverage by CV Fold')
+    ax3.set_xticks(fold_nums)
+    ax3.legend(loc='upper left')
+
+    ax3b = ax3.twinx()
+    ax3b.plot(
+        fold_nums,
+        coverage_values,
+        color='#E67E22',
+        marker='o',
+        linewidth=2,
+        label='Coverage (%)'
+    )
+    ax3b.set_ylabel('Coverage (%)')
+    ax3b.set_ylim(0, 100)
+    ax3b.legend(loc='upper right')
     
     plt.tight_layout()
     
@@ -220,22 +281,28 @@ def plot_all_locations_comparison(results: dict, output_dir: str = 'models',
     
     locations = []
     cv_rmse = []
-    cv_mape = []
+    cv_mae = []
+    cv_wape = []
     test_rmse = []
-    test_mape = []
+    test_mae = []
+    test_wape = []
+    test_coverage = []
     
     for loc, res in results.items():
         if 'error' not in res:
             locations.append(loc)
             cv_rmse.append(res['cv_metrics']['avg_rmse'])
-            cv_mape.append(res['cv_metrics']['avg_mape'])
+            cv_mae.append(res['cv_metrics']['avg_mae'])
+            cv_wape.append(res['cv_metrics']['avg_wape'])
             test_rmse.append(res['test_metrics']['rmse'])
-            test_mape.append(res['test_metrics']['mape'])
+            test_mae.append(res['test_metrics']['mae'])
+            test_wape.append(res['test_metrics']['wape'])
+            test_coverage.append(res['test_metrics']['interval_coverage'])
     
     x = np.arange(len(locations))
     width = 0.35
     
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
     
     # RMSE comparison
     ax1 = axes[0]
@@ -248,16 +315,33 @@ def plot_all_locations_comparison(results: dict, output_dir: str = 'models',
     ax1.set_xticklabels(locations)
     ax1.legend()
     
-    # MAPE comparison
+    # MAE comparison
     ax2 = axes[1]
-    bars3 = ax2.bar(x - width/2, cv_mape, width, label='CV (avg)', color='#2E86AB', alpha=0.8)
-    bars4 = ax2.bar(x + width/2, test_mape, width, label='Test', color='#E94F37', alpha=0.8)
+    bars3 = ax2.bar(x - width/2, cv_mae, width, label='CV (avg)', color='#2E86AB', alpha=0.8)
+    bars4 = ax2.bar(x + width/2, test_mae, width, label='Test', color='#E94F37', alpha=0.8)
     ax2.set_xlabel('Location')
-    ax2.set_ylabel('MAPE (%)')
-    ax2.set_title('MAPE Comparison: CV vs Test')
+    ax2.set_ylabel('MAE')
+    ax2.set_title('MAE Comparison: CV vs Test')
     ax2.set_xticks(x)
     ax2.set_xticklabels(locations)
     ax2.legend()
+
+    # WAPE comparison with coverage overlay
+    ax3 = axes[2]
+    bars5 = ax3.bar(x - width/2, cv_wape, width, label='CV (avg)', color='#2E86AB', alpha=0.8)
+    bars6 = ax3.bar(x + width/2, test_wape, width, label='Test', color='#E94F37', alpha=0.8)
+    ax3.set_xlabel('Location')
+    ax3.set_ylabel('WAPE (%)')
+    ax3.set_title('WAPE Comparison: CV vs Test')
+    ax3.set_xticks(x)
+    ax3.set_xticklabels(locations)
+    ax3.legend(loc='upper left')
+
+    ax3b = ax3.twinx()
+    ax3b.plot(x, test_coverage, color='#1ABC9C', marker='o', linewidth=2, label='Test Coverage')
+    ax3b.set_ylabel('Coverage (%)')
+    ax3b.set_ylim(0, 100)
+    ax3b.legend(loc='upper right')
     
     plt.tight_layout()
     
