@@ -31,11 +31,16 @@ def forecast(artifacts_dir):
         raise RuntimeError(f"Forecasting failed: {e}")
 
 
-def serve():
+def serve(artifacts_dir):
     """Start the FastAPI server."""
+    import os
+
     import uvicorn
 
     from src.api.app import app
+
+    # Set environment variable for app.py to pick up
+    os.environ["ARTIFACTS_DIR"] = artifacts_dir
 
     print("Starting API server...")
     print("API documentation available at: http://localhost:8000/docs")
@@ -70,7 +75,13 @@ if __name__ == "__main__":
     )
 
     # Serve command
-    subparsers.add_parser("serve", help="Start the API server")
+    serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser.add_argument(
+        "--artifacts-dir",
+        type=str,
+        default="artifacts",
+        help="Directory containing models and artifacts for the API",
+    )
 
     args = parser.parse_args()
 
@@ -79,4 +90,4 @@ if __name__ == "__main__":
     elif args.command == "forecast":
         forecast(artifacts_dir=args.artifacts_dir)
     elif args.command == "serve":
-        serve()
+        serve(artifacts_dir=args.artifacts_dir)
