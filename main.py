@@ -8,8 +8,9 @@ Usage:
 """
 
 import argparse
-from src.models.train import train_all_locations
+
 from src.models.forecast import forecast_all_locations
+from src.models.train import train_all_locations
 
 
 def train(data_path, artifacts_dir):
@@ -33,6 +34,7 @@ def forecast(artifacts_dir):
 def serve():
     """Start the FastAPI server."""
     import uvicorn
+
     from src.api.app import app
 
     print("Starting API server...")
@@ -46,12 +48,26 @@ if __name__ == "__main__":
 
     # Train command
     train_parser = subparsers.add_parser("train", help="Train models for all locations")
-    train_parser.add_argument("--data-path", type=str, default="data-4-.csv", help="Path to input data CSV")
-    train_parser.add_argument("--artifacts-dir", type=str, default="artifacts", help="Directory to save models and artifacts")
+    train_parser.add_argument(
+        "--data-path", type=str, default="data-4-.csv", help="Path to input data CSV"
+    )
+    train_parser.add_argument(
+        "--artifacts-dir",
+        type=str,
+        default="artifacts",
+        help="Directory to save models and artifacts",
+    )
 
     # Forecast command
-    forecast_parser = subparsers.add_parser("forecast", help="Generate forecasts using trained models")
-    forecast_parser.add_argument("--artifacts-dir", type=str, default="artifacts", help="Directory containing models and artifacts")
+    forecast_parser = subparsers.add_parser(
+        "forecast", help="Generate forecasts using trained models"
+    )
+    forecast_parser.add_argument(
+        "--artifacts-dir",
+        type=str,
+        default="artifacts",
+        help="Directory containing models and artifacts",
+    )
 
     # Serve command
     subparsers.add_parser("serve", help="Start the API server")
