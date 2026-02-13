@@ -6,7 +6,7 @@ Usage:
     python main.py forecast  # Generate forecasts using trained models
     python main.py serve     # Start the API server
 """
-import sys
+import argparse
 from src.models.train import train_all_locations
 from src.models.forecast import forecast_all_locations
 
@@ -40,19 +40,23 @@ def serve():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: python main.py [train|forecast|serve]")
-        sys.exit(1)
-    
-    command = sys.argv[1].lower()
-    
-    if command == 'train':
+    parser = argparse.ArgumentParser(description="Package Forecast CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Train command
+    subparsers.add_parser("train", help="Train models for all locations")
+
+    # Forecast command
+    subparsers.add_parser("forecast", help="Generate forecasts using trained models")
+
+    # Serve command
+    subparsers.add_parser("serve", help="Start the API server")
+
+    args = parser.parse_args()
+
+    if args.command == 'train':
         train()
-    elif command == 'forecast':
+    elif args.command == 'forecast':
         forecast()
-    elif command == 'serve':
+    elif args.command == 'serve':
         serve()
-    else:
-        print(f"Unknown command: {command}")
-        print("Usage: python main.py [train|forecast|serve]")
-        sys.exit(1)
