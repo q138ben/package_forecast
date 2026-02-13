@@ -6,6 +6,7 @@ Usage:
     python main.py forecast  # Generate forecasts using trained models
     python main.py serve     # Start the API server
 """
+
 import argparse
 from src.models.train import train_all_locations
 from src.models.forecast import forecast_all_locations
@@ -17,7 +18,7 @@ def train():
     try:
         train_all_locations()
     except Exception as e:
-        raise RuntimeError(f"Training failed: {e}") 
+        raise RuntimeError(f"Training failed: {e}")
 
 
 def forecast():
@@ -27,19 +28,19 @@ def forecast():
         forecast_all_locations()
     except Exception as e:
         raise RuntimeError(f"Forecasting failed: {e}")
-    
+
 
 def serve():
     """Start the FastAPI server."""
     import uvicorn
     from src.api.app import app
-    
+
     print("Starting API server...")
     print("API documentation available at: http://localhost:8000/docs")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Package Forecast CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -54,9 +55,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.command == 'train':
+    if args.command == "train":
         train()
-    elif args.command == 'forecast':
+    elif args.command == "forecast":
         forecast()
-    elif args.command == 'serve':
+    elif args.command == "serve":
         serve()
