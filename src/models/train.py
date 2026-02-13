@@ -19,7 +19,6 @@ from src.models.evaluate import (
     run_time_series_cv,
 )
 from src.data.splits import split_train_test, save_data_splits
-from src.visualization.plots import plot_forecast_vs_actual
 
 
 def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
@@ -32,20 +31,13 @@ def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def train_location_model(location: str, data_path: str, 
+def train_location_model(location: str, 
+                        data_path: str, 
                         output_dir: str = 'models',
                         n_cv_folds: int = 5,
-                        test_size: int = 30) -> Dict:
+                        test_size: int = 30,) -> Dict:
     """
     Train a Prophet model for a specific location.
-    
-    This function orchestrates the full training pipeline:
-    1. Loads and prepares data for the location
-    2. Holds out last 30 days as final test set
-    3. Runs n-fold time series cross-validation on remaining data
-    4. Evaluates on final test set
-    5. Retrains on full data and generates 30-day forecast
-    6. Saves model, forecast, data splits, and visualizations
     
     Args:
         location: Location identifier ('A', 'B', or 'C')
@@ -72,11 +64,8 @@ def train_location_model(location: str, data_path: str,
     print(f"  Std packages: {metadata['std_packages']:.1f}")
     
     # Step 2: Split into train/test
+    location_df = _add_is_weekend(location_df)
     train_df, test_df = split_train_test(location_df, test_size=test_size)
-
-    # Derived regressor(s) used by Prophet
-    train_df = _add_is_weekend(train_df)
-    test_df = _add_is_weekend(test_df)
     
     # Step 3: Run time series cross-validation on training data
     cv_results = run_time_series_cv(location, train_df, n_folds=n_cv_folds, test_size=test_size)
@@ -102,33 +91,12 @@ def train_location_model(location: str, data_path: str,
     # Step 5: Save data splits for reproducibility
     splits_file = save_data_splits(location, train_df, test_df, cv_results, output_dir)
     
-    # Step 6: Retrain on full dataset for production forecast
+    # Step 6: Retrain on full dataset for production
     print(f"\nRetraining on full dataset for production...")
-    location_df = _add_is_weekend(location_df)
     final_model = create_prophet_model(location, len(location_df))
     final_model.fit(location_df)
     
-    # Step 7: Generate forecast including historical period for visualization
-    future = final_model.make_future_dataframe(periods=30)
-    weekday = pd.to_datetime(future['ds']).dt.weekday
-    future['is_weekend'] = (weekday >= 5).astype(int)
-    future['is_saturday'] = (weekday == 5).astype(int)
-    future['is_sunday'] = (weekday == 6).astype(int)
-    full_forecast = final_model.predict(future)
-    
-    # Step 8: Create visualization
-    print(f"\nGenerating visualization...")
-    plot_file = plot_forecast_vs_actual(location, train_df, test_df, full_forecast, output_dir)
-    
-    # Step 9: Extract and save future forecast
-    future_forecast = full_forecast.tail(30)[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
-    future_forecast.columns = ['date', 'forecast', 'lower_bound', 'upper_bound']
-    
-    # Ensure non-negative forecasts (packages can't be negative)
-    for col in ['forecast', 'lower_bound', 'upper_bound']:
-        future_forecast[col] = future_forecast[col].clip(lower=0)
-    
-    # Step 10: Save artifacts
+    # Save model artifact
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
     
@@ -136,10 +104,11 @@ def train_location_model(location: str, data_path: str,
     with open(model_file, 'wb') as f:
         pickle.dump(final_model, f)
     
-    forecast_file = output_path / f'location_{location}_forecast.csv'
-    future_forecast.to_csv(forecast_file, index=False)
     
-    # Step 11: Save metadata and metrics
+
+
+    
+    # Step 10: Save metadata and metrics
     results = {
         'location': location,
         'metadata': metadata,
@@ -171,11 +140,11 @@ def train_location_model(location: str, data_path: str,
         },
         'test_metrics': test_metrics,
         'baseline_test_metrics': baseline_test_metrics,
-        'forecast_file': str(forecast_file),
         'model_file': str(model_file),
         'splits_file': splits_file,
-        'plot_file': plot_file
     }
+    
+
     
     results_file = output_path / f'location_{location}_results.json'
     with open(results_file, 'w') as f:
@@ -186,7 +155,6 @@ def train_location_model(location: str, data_path: str,
     
     print(f"\nSaved:")
     print(f"  Model: {model_file}")
-    print(f"  Forecast: {forecast_file}")
     print(f"  Splits: {splits_file}")
     print(f"  Results: {results_file}")
     

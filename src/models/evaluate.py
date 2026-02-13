@@ -24,26 +24,6 @@ def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _prepare_prophet_predict_df(model: Prophet, df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare a dataframe for Prophet predict() including required regressors."""
-    predict_df = df.copy()
-    predict_df['ds'] = pd.to_datetime(predict_df['ds'])
-
-    extra_regressors = getattr(model, 'extra_regressors', {}) or {}
-    required = list(extra_regressors.keys())
-    for regressor_name in required:
-        if regressor_name in predict_df.columns:
-            continue
-        if regressor_name in {'is_weekend', 'is_saturday', 'is_sunday'}:
-            predict_df = _add_is_weekend(predict_df)
-            continue
-        raise ValueError(
-            f"Missing required regressor column '{regressor_name}' for Prophet predict()."
-        )
-
-    cols = ['ds'] + required
-    return predict_df[cols]
-
 
 def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
     """
@@ -57,8 +37,7 @@ def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
         Dictionary with RMSE, MAE, WAPE, and interval coverage metrics
     """
     # Generate predictions for test period
-    predict_df = _prepare_prophet_predict_df(model, test_df)
-    forecast = model.predict(predict_df)
+    forecast = model.predict(test_df)
     
     # Calculate metrics
     y_true = test_df['y'].values
@@ -310,9 +289,6 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         train_df = df.iloc[train_start:train_end].copy()
         val_df = df.iloc[val_start:val_end].copy()
 
-        # Add derived regressors used by the model
-        train_df = _add_is_weekend(train_df)
-        val_df = _add_is_weekend(val_df)
         
         # Train model on this fold
         model = create_prophet_model(location, len(train_df), verbose=False)
@@ -340,39 +316,6 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
         baseline_cov.append(baseline_metrics['interval_coverage'])
         baseline_width.append(baseline_metrics['avg_interval_width'])
         
-        if verbose:
-            print(f"    Fold {fold}: Train {split['train_dates'][0]} to {split['train_dates'][1]} "
-                  f"| Val {split['val_dates'][0]} to {split['val_dates'][1]} "
-                  f"| RMSE: {metrics['rmse']:.2f} | MAE: {metrics['mae']:.2f} "
-                  f"| WAPE: {metrics['wape']:.2f}% | Coverage: {metrics['interval_coverage']:.1f}% "
-                  f"| Baseline RMSE: {baseline_metrics['rmse']:.2f} | Baseline WAPE: {baseline_metrics['wape']:.2f}% "
-                  f"| Baseline Coverage: {baseline_metrics['interval_coverage']:.1f}%")
-    
-    if not all_rmse:
-        nan_values = {
-            'avg_rmse': float('nan'),
-            'avg_mae': float('nan'),
-            'avg_wape': float('nan'),
-            'avg_interval_coverage': float('nan'),
-            'avg_interval_width': float('nan'),
-            'std_rmse': float('nan'),
-            'std_mae': float('nan'),
-            'std_wape': float('nan'),
-            'std_interval_coverage': float('nan'),
-            'std_interval_width': float('nan'),
-            'baseline_avg_rmse': float('nan'),
-            'baseline_avg_mae': float('nan'),
-            'baseline_avg_wape': float('nan'),
-            'baseline_avg_interval_coverage': float('nan'),
-            'baseline_avg_interval_width': float('nan'),
-            'baseline_std_rmse': float('nan'),
-            'baseline_std_mae': float('nan'),
-            'baseline_std_wape': float('nan'),
-            'baseline_std_interval_coverage': float('nan'),
-            'baseline_std_interval_width': float('nan')
-        }
-        cv_results.update(nan_values)
-        return cv_results
 
     # Calculate aggregate metrics
     cv_results['avg_rmse'] = float(np.mean(all_rmse))
@@ -396,14 +339,6 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
     cv_results['baseline_std_interval_coverage'] = float(np.nanstd(baseline_cov))
     cv_results['baseline_std_interval_width'] = float(np.nanstd(baseline_width))
     
-    if verbose:
-        print(
-            f"\n  CV Summary: RMSE = {cv_results['avg_rmse']:.2f} ± {cv_results['std_rmse']:.2f} | "
-            f"MAE = {cv_results['avg_mae']:.2f} ± {cv_results['std_mae']:.2f} | "
-            f"WAPE = {cv_results['avg_wape']:.2f}% ± {cv_results['std_wape']:.2f}% | "
-            f"Coverage = {cv_results['avg_interval_coverage']:.1f}% ± {cv_results['std_interval_coverage']:.1f}% | "
-            f"Baseline RMSE = {cv_results['baseline_avg_rmse']:.2f} ± {cv_results['baseline_std_rmse']:.2f} | "
-            f"Baseline Coverage = {cv_results['baseline_avg_interval_coverage']:.1f}% ± {cv_results['baseline_std_interval_coverage']:.1f}%"
-        )
+
     
     return cv_results
