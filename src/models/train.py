@@ -73,7 +73,7 @@ def train_location_model(
     df = load_raw_data(data_path)
     location_df, metadata = prepare_location_data(df, location)
 
-    print(f"\nData Summary:")
+    print("\nData Summary:")
     print(f"  Date range: {metadata['start_date']} to {metadata['end_date']}")
     print(f"  Total days: {metadata['n_days']}")
     print(f"  Mean packages: {metadata['mean_packages']:.1f}")
@@ -89,13 +89,13 @@ def train_location_model(
     )
 
     # Step 4: Train model on full training data and evaluate on test
-    print(f"\n  Training model on full training data...")
+    print("\n  Training model on full training data...")
     model = create_prophet_model(location, len(train_df))
     model.fit(train_df)
 
     test_metrics = evaluate_model(model, test_df)
     baseline_test_metrics = evaluate_naive_baseline(train_df, test_df)
-    print(f"\nFinal Test Performance (Holdout):")
+    print("\nFinal Test Performance (Holdout):")
     print(f"  RMSE: {test_metrics['rmse']:.2f} packages")
     print(f"  MAE: {test_metrics['mae']:.2f} packages")
     print(f"  WAPE: {test_metrics['wape']:.2f}%")
@@ -110,7 +110,7 @@ def train_location_model(
     splits_file = save_data_splits(location, train_df, test_df, cv_results, output_dir)
 
     # Step 6: Retrain on full dataset for production
-    print(f"\nRetraining on full dataset for production...")
+    print("\nRetraining on full dataset for production...")
     final_model = create_prophet_model(location, len(location_df))
     final_model.fit(location_df)
 
@@ -145,7 +145,7 @@ def train_location_model(
         ].strftime("%Y-%m-%d")
         json.dump(results_copy, f, indent=2)
 
-    print(f"\nSaved:")
+    print("\nSaved:")
     print(f"  Model: {model_file}")
     print(f"  Splits: {splits_file}")
     print(f"  Results: {results_file}")

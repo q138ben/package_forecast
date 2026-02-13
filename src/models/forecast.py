@@ -5,14 +5,12 @@ This module provides functionality to generate forecasts using
 pre-trained Prophet models without retraining.
 """
 
-import json
 import pickle
 from pathlib import Path
 from typing import Dict, Optional
 
 import pandas as pd
 
-from src.processing.cleaning import load_raw_data, prepare_location_data
 from src.visualization.plots import plot_test_period_zoom
 from src.models.train import _add_is_weekend
 
@@ -86,7 +84,7 @@ def forecast_location(
     # Load test data for visualization
     test_data_file = output_path / f"location_{location}_test_data.csv"
     if test_data_file.exists():
-        print(f"Generating visualization...")
+        print("Generating visualization...")
         test_df = pd.read_csv(test_data_file)
         test_df["ds"] = pd.to_datetime(test_df["ds"])
         plot_file = plot_test_period_zoom(location, test_df, full_forecast, output_dir)
@@ -112,7 +110,7 @@ def forecast_location(
     if plot_file:
         forecast_stats["plot_file"] = plot_file
 
-    print(f"\nForecast Summary:")
+    print("\nForecast Summary:")
     print(f"  Period: {forecast_stats['start_date']} to {forecast_stats['end_date']}")
     print(f"  Mean daily forecast: {forecast_stats['mean_forecast']:.1f} packages")
     print(f"  Total forecast: {forecast_stats['total_forecast']:.0f} packages")

@@ -6,7 +6,6 @@ with actual data and visualizing model performance.
 """
 
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
