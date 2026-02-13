@@ -7,19 +7,18 @@ with actual data and visualizing model performance.
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+from src.models.evaluate import calculate_metrics
 
 
 def plot_test_period_zoom(
     location: str,
     test_df: pd.DataFrame,
     forecast: pd.DataFrame,
-    output_dir: str = "models",
-    show: bool = False,
+    output_dir: str = "models"
 ) -> str:
     """
     Create visualization showing test period comparison and future forecast.
@@ -45,7 +44,6 @@ def plot_test_period_zoom(
     future_forecast_color = "#0066CC"
     ci_color = "#28A745"
     future_ci_color = "#0066CC"
-    baseline_color = "#8E44AD"
 
     # Filter forecast to test period and future period
     test_forecast = forecast[forecast["ds"].isin(test_df["ds"])]
@@ -102,30 +100,18 @@ def plot_test_period_zoom(
             label="95% CI",
         )
 
-    # Calculate and display metrics
+    # Calculate and display metrics using calculate_metrics
     y_true = test_df["y"].values
     y_pred = test_forecast["yhat"].values
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae = mean_absolute_error(y_true, y_pred)
-    denominator = np.sum(np.abs(y_true))
-    wape = (
-        (np.sum(np.abs(y_true - y_pred)) / denominator * 100)
-        if denominator != 0
-        else np.nan
-    )
-    if {"yhat_lower", "yhat_upper"}.issubset(test_forecast.columns):
-        lower = test_forecast["yhat_lower"].values
-        upper = test_forecast["yhat_upper"].values
-        coverage = np.mean((y_true >= lower) & (y_true <= upper)) * 100
-    else:
-        coverage = np.nan
-
+    lower = test_forecast["yhat_lower"].values if "yhat_lower" in test_forecast.columns else None
+    upper = test_forecast["yhat_upper"].values if "yhat_upper" in test_forecast.columns else None
+    metrics = calculate_metrics(y_true, y_pred, lower, upper)
     metrics_text = (
         f"Test Period Metrics:\n"
-        f"  RMSE: {rmse:.2f}\n"
-        f"  MAE: {mae:.2f}\n"
-        f"  WAPE: {wape:.2f}%\n"
-        f"  Coverage: {coverage:.1f}%"
+        f"  RMSE: {metrics['rmse']:.2f}\n"
+        f"  MAE: {metrics['mae']:.2f}\n"
+        f"  WAPE: {metrics['wape']:.2f}%\n"
+        f"  Coverage: {metrics['interval_coverage']:.1f}%"
     )
     ax.text(
         0.02,
@@ -147,13 +133,7 @@ def plot_test_period_zoom(
     ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
-    # Adjust the interval based on total days shown
-    total_days = (
-        (future_forecast["ds"].max() - test_df["ds"].min()).days
-        if len(future_forecast) > 0
-        else len(test_df)
-    )
-    interval = max(5, total_days // 10)
+
 
     ax.text(
         0.02,
@@ -184,10 +164,8 @@ def plot_test_period_zoom(
     plot_file = output_path / f"location_{location}_forecast_plot.png"
     plt.savefig(plot_file, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
-    else:
-        plt.close()
+
+    plt.close()
 
     print(f"  Plot saved: {plot_file}")
     return str(plot_file)
