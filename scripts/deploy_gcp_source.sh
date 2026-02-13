@@ -23,21 +23,13 @@ echo "========================================================"
 
 # Enable necessary services
 echo "Enabling necessary APIs..."
-gcloud services enable cloudbuild.googleapis.com run.googleapis.com --project $PROJECT_ID
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com artifactregistry.googleapis.com --project $PROJECT_ID
 
-# Build the Docker image
-echo "Step 1: Building Docker image..."
-gcloud builds submit --tag gcr.io/$PROJECT_ID/$APP_NAME --project $PROJECT_ID
-
-if [ $? -ne 0 ]; then
-    echo "Build failed! Exiting."
-    exit 1
-fi
-
-# Deploy to Cloud Run
-echo "Step 2: Deploying to Cloud Run..."
+# Deploy from source (handles build and deploy in one step)
+echo "Step 1: Building and Deploying to Cloud Run..."
+# This command automatically uses the Dockerfile in the current directory
 gcloud run deploy $APP_NAME \
-  --image gcr.io/$PROJECT_ID/$APP_NAME \
+  --source . \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
