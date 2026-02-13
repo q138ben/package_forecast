@@ -4,7 +4,7 @@ Model evaluation metrics and cross-validation utilities.
 This module provides functions for evaluating forecast model performance
 and running time series cross-validation.
 """
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,67 +14,57 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from src.models.prophet_model import create_prophet_model
 
 
-def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['ds'] = pd.to_datetime(df['ds'])
-    weekday = df['ds'].dt.weekday
-    df['is_weekend'] = (weekday >= 5).astype(int)
-    df['is_saturday'] = (weekday == 5).astype(int)
-    df['is_sunday'] = (weekday == 6).astype(int)
-    return df
+# Metric keys used throughout the module
+METRIC_KEYS = ['rmse', 'mae', 'wape', 'interval_coverage']
 
 
-
-def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray,
+                      lower: Optional[np.ndarray] = None,
+                      upper: Optional[np.ndarray] = None) -> Dict[str, float]:
     """
-    Evaluate model performance on test data.
+    Calculate forecast evaluation metrics.
     
     Args:
-        model: Fitted Prophet model
-        test_df: Test dataframe with 'ds' and 'y' columns
+        y_true: Actual values
+        y_pred: Predicted values
+        lower: Lower bounds of prediction intervals (optional)
+        upper: Upper bounds of prediction intervals (optional)
         
     Returns:
-        Dictionary with RMSE, MAE, WAPE, and interval coverage metrics
+        Dictionary with RMSE, MAE, WAPE, interval coverage, and interval width
     """
-    # Generate predictions for test period
-    forecast = model.predict(test_df)
-    
-    # Calculate metrics
-    y_true = test_df['y'].values
-    y_pred = forecast['yhat'].values
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     denominator = np.sum(np.abs(y_true))
     wape = (np.sum(np.abs(y_true - y_pred)) / denominator * 100) if denominator != 0 else np.nan
-
-    if {'yhat_lower', 'yhat_upper'}.issubset(forecast.columns):
-        lower = forecast['yhat_lower'].values
-        upper = forecast['yhat_upper'].values
-        coverage = np.mean((y_true >= lower) & (y_true <= upper)) * 100
-        avg_interval_width = float(np.mean(upper - lower))
+    
+    # Calculate interval metrics if bounds are provided
+    if lower is not None and upper is not None:
+        valid_mask = ~np.isnan(lower) & ~np.isnan(upper)
+        if np.any(valid_mask):
+            coverage = np.mean((y_true[valid_mask] >= lower[valid_mask]) & 
+                              (y_true[valid_mask] <= upper[valid_mask])) * 100
+        else:
+            coverage = float('nan')
     else:
-        coverage = np.nan
-        avg_interval_width = np.nan
+        coverage = float('nan')
     
     return {
         'rmse': float(rmse),
         'mae': float(mae),
         'wape': float(wape),
-        'interval_coverage': float(coverage),
-        'avg_interval_width': float(avg_interval_width)
+        'interval_coverage': float(coverage)
     }
 
 
 def seasonal_naive_forecast(train_df: pd.DataFrame, horizon: int,
                             seasonal_period: int = 7,
                             return_intervals: bool = False,
-                            alpha: float = 0.05):
+                            alpha: float = 0.05) -> Tuple[np.ndarray, ...]:
     """Generate a seasonal naive forecast for a given horizon."""
     if horizon <= 0:
-        if return_intervals:
-            empty = np.array([], dtype=float)
-            return empty, empty, empty
-        return np.array([], dtype=float)
+        empty = np.array([], dtype=float)
+        return (empty, empty, empty) if return_intervals else empty
 
     history = train_df['y'].values
     if history.size == 0:
@@ -108,59 +98,38 @@ def seasonal_naive_forecast(train_df: pd.DataFrame, horizon: int,
     return forecast_values, lower.astype(float), upper.astype(float)
 
 
+def evaluate_model(model: Prophet, test_df: pd.DataFrame) -> Dict[str, float]:
+    """
+    Evaluate Prophet model performance on test data.
+    
+    Args:
+        model: Fitted Prophet model
+        test_df: Test dataframe with 'ds' and 'y' columns
+        
+    Returns:
+        Dictionary with evaluation metrics
+    """
+    forecast = model.predict(test_df)
+    y_true = test_df['y'].values
+    y_pred = forecast['yhat'].values
+    
+    lower = forecast['yhat_lower'].values if 'yhat_lower' in forecast.columns else None
+    upper = forecast['yhat_upper'].values if 'yhat_upper' in forecast.columns else None
+    
+    return calculate_metrics(y_true, y_pred, lower, upper)
+
+
 def evaluate_naive_baseline(train_df: pd.DataFrame, test_df: pd.DataFrame,
                             seasonal_period: int = 7) -> Dict[str, float]:
     """Evaluate a seasonal naive baseline on the test split."""
     if test_df.empty:
-        return {
-            'rmse': float('nan'),
-            'mae': float('nan'),
-            'wape': float('nan'),
-            'interval_coverage': float('nan'),
-            'avg_interval_width': float('nan')
-        }
+        return {key: float('nan') for key in METRIC_KEYS}
 
     y_true = test_df['y'].values
     y_pred, lower, upper = seasonal_naive_forecast(
-        train_df,
-        len(test_df),
-        seasonal_period=seasonal_period,
-        return_intervals=True
+        train_df, len(test_df), seasonal_period=seasonal_period, return_intervals=True
     )
-    metrics = calculate_metrics(y_true, y_pred)
-    valid_mask = ~np.isnan(lower) & ~np.isnan(upper)
-    if np.any(valid_mask):
-        coverage = np.mean((y_true[valid_mask] >= lower[valid_mask]) & (y_true[valid_mask] <= upper[valid_mask])) * 100
-        interval_width = np.mean(upper[valid_mask] - lower[valid_mask])
-        metrics['interval_coverage'] = float(coverage)
-        metrics['avg_interval_width'] = float(interval_width)
-    else:
-        metrics['interval_coverage'] = float('nan')
-        metrics['avg_interval_width'] = float('nan')
-    return metrics
-
-
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """
-    Calculate forecast evaluation metrics.
-    
-    Args:
-        y_true: Actual values
-        y_pred: Predicted values
-        
-    Returns:
-        Dictionary with RMSE, MAE, and WAPE metrics
-    """
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae = mean_absolute_error(y_true, y_pred)
-    denominator = np.sum(np.abs(y_true))
-    wape = (np.sum(np.abs(y_true - y_pred)) / denominator * 100) if denominator != 0 else np.nan
-    
-    return {
-        'rmse': float(rmse),
-        'mae': float(mae),
-        'wape': float(wape)
-    }
+    return calculate_metrics(y_true, y_pred, lower, upper)
 
 
 def time_series_cv_split(df: pd.DataFrame, n_folds: int = 5, 
@@ -182,33 +151,21 @@ def time_series_cv_split(df: pd.DataFrame, n_folds: int = 5,
         List of dicts containing train/val indices and date ranges
     """
     n_samples = len(df)
-    
-    # Reserve last test_size days for final holdout test
-    # CV is done on the remaining data
     cv_end_idx = n_samples - test_size
-    
-    # Calculate minimum training size (at least 2x test_size)
     min_train_size = test_size * 2
-    
-    # Calculate the step size between folds
     available_for_cv = cv_end_idx - min_train_size - gap
     fold_step = available_for_cv // n_folds
     
     splits = []
-    
     for fold in range(n_folds):
-        # Training end index grows with each fold
         train_end_idx = min_train_size + (fold * fold_step)
-        
-        # Validation starts after the gap
         val_start_idx = train_end_idx + gap
         val_end_idx = min(val_start_idx + test_size, cv_end_idx)
         
-        # Ensure we have enough validation data
         if val_end_idx - val_start_idx < test_size // 2:
             continue
             
-        split_info = {
+        splits.append({
             'fold': fold + 1,
             'train_idx': (0, train_end_idx),
             'val_idx': (val_start_idx, val_end_idx),
@@ -218,10 +175,27 @@ def time_series_cv_split(df: pd.DataFrame, n_folds: int = 5,
                          df.iloc[val_end_idx - 1]['ds'].strftime('%Y-%m-%d')),
             'train_size': train_end_idx,
             'val_size': val_end_idx - val_start_idx
-        }
-        splits.append(split_info)
+        })
     
     return splits
+
+
+def _aggregate_metrics(metrics_list: List[Dict[str, float]]) -> Dict[str, float]:
+    """
+    Aggregate a list of metrics dictionaries into avg and std.
+    
+    Args:
+        metrics_list: List of metric dictionaries
+        
+    Returns:
+        Dictionary with avg_* and std_* for each metric
+    """
+    result = {}
+    for key in METRIC_KEYS:
+        values = [m[key] for m in metrics_list]
+        result[f'avg_{key}'] = float(np.nanmean(values))
+        result[f'std_{key}'] = float(np.nanstd(values))
+    return result
 
 
 def run_time_series_cv(location: str, df: pd.DataFrame, 
@@ -242,103 +216,47 @@ def run_time_series_cv(location: str, df: pd.DataFrame,
     """
     splits = time_series_cv_split(df, n_folds=n_folds, test_size=test_size)
     
-    cv_results = {
-        'n_folds': len(splits),
-        'folds': [],
-        'avg_rmse': 0.0,
-        'avg_mae': 0.0,
-        'avg_wape': 0.0,
-        'avg_interval_coverage': 0.0,
-        'avg_interval_width': 0.0,
-        'std_rmse': 0.0,
-        'std_mae': 0.0,
-        'std_wape': 0.0,
-        'std_interval_coverage': 0.0,
-        'std_interval_width': 0.0,
-        'baseline_avg_rmse': 0.0,
-        'baseline_avg_mae': 0.0,
-        'baseline_avg_wape': 0.0,
-        'baseline_avg_interval_coverage': 0.0,
-        'baseline_avg_interval_width': 0.0,
-        'baseline_std_rmse': 0.0,
-        'baseline_std_mae': 0.0,
-        'baseline_std_wape': 0.0,
-        'baseline_std_interval_coverage': 0.0,
-        'baseline_std_interval_width': 0.0
-    }
-    
-    all_rmse = []
-    all_mae = []
-    all_wape = []
-    all_cov = []
-    all_width = []
-    baseline_rmse = []
-    baseline_mae = []
-    baseline_wape = []
-    baseline_cov = []
-    baseline_width = []
-    
     if verbose:
         print(f"\n  Running {len(splits)}-fold Time Series Cross-Validation...")
     
+    folds = []
+    prophet_metrics_list = []
+    baseline_metrics_list = []
+    
     for split in splits:
-        fold = split['fold']
         train_start, train_end = split['train_idx']
         val_start, val_end = split['val_idx']
         
         train_df = df.iloc[train_start:train_end].copy()
         val_df = df.iloc[val_start:val_end].copy()
-
         
-        # Train model on this fold
+        # Train and evaluate Prophet model
         model = create_prophet_model(location, len(train_df), verbose=False)
         model.fit(train_df)
+        prophet_metrics = evaluate_model(model, val_df)
         
-        # Evaluate
-        metrics = evaluate_model(model, val_df)
+        # Evaluate baseline model
         baseline_metrics = evaluate_naive_baseline(train_df, val_df)
         
-        fold_result = {
+        folds.append({
             **split,
-            'metrics': metrics,
+            'metrics': prophet_metrics,
             'baseline_metrics': baseline_metrics
-        }
-        cv_results['folds'].append(fold_result)
+        })
         
-        all_rmse.append(metrics['rmse'])
-        all_mae.append(metrics['mae'])
-        all_wape.append(metrics['wape'])
-        all_cov.append(metrics['interval_coverage'])
-        all_width.append(metrics['avg_interval_width'])
-        baseline_rmse.append(baseline_metrics['rmse'])
-        baseline_mae.append(baseline_metrics['mae'])
-        baseline_wape.append(baseline_metrics['wape'])
-        baseline_cov.append(baseline_metrics['interval_coverage'])
-        baseline_width.append(baseline_metrics['avg_interval_width'])
-        
-
-    # Calculate aggregate metrics
-    cv_results['avg_rmse'] = float(np.mean(all_rmse))
-    cv_results['avg_mae'] = float(np.mean(all_mae))
-    cv_results['avg_wape'] = float(np.nanmean(all_wape))
-    cv_results['avg_interval_coverage'] = float(np.nanmean(all_cov))
-    cv_results['avg_interval_width'] = float(np.nanmean(all_width))
-    cv_results['std_rmse'] = float(np.std(all_rmse))
-    cv_results['std_mae'] = float(np.std(all_mae))
-    cv_results['std_wape'] = float(np.nanstd(all_wape))
-    cv_results['std_interval_coverage'] = float(np.nanstd(all_cov))
-    cv_results['std_interval_width'] = float(np.nanstd(all_width))
-    cv_results['baseline_avg_rmse'] = float(np.mean(baseline_rmse))
-    cv_results['baseline_avg_mae'] = float(np.mean(baseline_mae))
-    cv_results['baseline_avg_wape'] = float(np.nanmean(baseline_wape))
-    cv_results['baseline_avg_interval_coverage'] = float(np.nanmean(baseline_cov))
-    cv_results['baseline_avg_interval_width'] = float(np.nanmean(baseline_width))
-    cv_results['baseline_std_rmse'] = float(np.std(baseline_rmse))
-    cv_results['baseline_std_mae'] = float(np.std(baseline_mae))
-    cv_results['baseline_std_wape'] = float(np.nanstd(baseline_wape))
-    cv_results['baseline_std_interval_coverage'] = float(np.nanstd(baseline_cov))
-    cv_results['baseline_std_interval_width'] = float(np.nanstd(baseline_width))
+        prophet_metrics_list.append(prophet_metrics)
+        baseline_metrics_list.append(baseline_metrics)
     
-
+    # Aggregate metrics for both models
+    prophet_agg = _aggregate_metrics(prophet_metrics_list)
+    baseline_agg = _aggregate_metrics(baseline_metrics_list)
+    
+    # Build result with prefixed baseline metrics
+    cv_results = {
+        'n_folds': len(splits),
+        'folds': folds,
+        **prophet_agg,
+        **{f'baseline_{k}': v for k, v in baseline_agg.items()}
+    }
     
     return cv_results
