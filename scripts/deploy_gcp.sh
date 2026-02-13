@@ -45,7 +45,7 @@ gcloud run deploy $APP_NAME \
 
 if [ $? -eq 0 ]; then
     echo "========================================================"
-    echo "Deployment Success! Your API is live."
+    echo "Deployment Success! The $APP_NAME API is live."
     echo "========================================================"
 else
     echo "Deployment failed."
