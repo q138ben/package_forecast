@@ -17,8 +17,21 @@ from src.models.evaluate import (
     evaluate_model,
     evaluate_naive_baseline,
     run_time_series_cv,
+    METRIC_KEYS,
 )
 from src.data.splits import split_train_test, save_data_splits
+
+
+def _extract_cv_metrics(cv_results: Dict, prefix: str = '') -> Dict:
+    """Extract avg/std metrics from CV results with optional prefix removal."""
+    metrics = {'n_folds': cv_results['n_folds']}
+    key_prefix = f'{prefix}' if prefix else ''
+    for key in METRIC_KEYS:
+        for stat in ['avg', 'std']:
+            src_key = f'{key_prefix}{stat}_{key}'
+            if src_key in cv_results:
+                metrics[f'{stat}_{key}'] = cv_results[src_key]
+    return metrics
 
 
 def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,32 +121,12 @@ def train_location_model(location: str,
 
 
     
-    # Step 10: Save metadata and metrics
+    # Step 7: Save metadata and metrics
     results = {
         'location': location,
         'metadata': metadata,
-        'cv_metrics': {
-            'avg_rmse': cv_results['avg_rmse'],
-            'avg_mae': cv_results['avg_mae'],
-            'avg_wape': cv_results['avg_wape'],
-            'avg_interval_coverage': cv_results['avg_interval_coverage'],
-            'std_rmse': cv_results['std_rmse'],
-            'std_mae': cv_results['std_mae'],
-            'std_wape': cv_results['std_wape'],
-            'std_interval_coverage': cv_results['std_interval_coverage'],
-            'n_folds': cv_results['n_folds']
-        },
-        'baseline_cv_metrics': {
-            'avg_rmse': cv_results['baseline_avg_rmse'],
-            'avg_mae': cv_results['baseline_avg_mae'],
-            'avg_wape': cv_results['baseline_avg_wape'],
-            'avg_interval_coverage': cv_results['baseline_avg_interval_coverage'],
-            'std_rmse': cv_results['baseline_std_rmse'],
-            'std_mae': cv_results['baseline_std_mae'],
-            'std_wape': cv_results['baseline_std_wape'],
-            'std_interval_coverage': cv_results['baseline_std_interval_coverage'],
-            'n_folds': cv_results['n_folds']
-        },
+        'cv_metrics': _extract_cv_metrics(cv_results),
+        'baseline_cv_metrics': _extract_cv_metrics(cv_results, prefix='baseline_'),
         'test_metrics': test_metrics,
         'baseline_test_metrics': baseline_test_metrics,
         'model_file': str(model_file),
@@ -141,7 +134,6 @@ def train_location_model(location: str,
     }
     
 
-    
     results_file = output_path / f'location_{location}_results.json'
     with open(results_file, 'w') as f:
         results_copy = results.copy()

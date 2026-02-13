@@ -31,7 +31,7 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray,
         upper: Upper bounds of prediction intervals (optional)
         
     Returns:
-        Dictionary with RMSE, MAE, WAPE, interval coverage, and interval width
+        Dictionary with RMSE, MAE, WAPE, and interval coverage
     """
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
