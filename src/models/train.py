@@ -78,10 +78,6 @@ def train_location_model(location: str, data_path: str,
     train_df = _add_is_weekend(train_df)
     test_df = _add_is_weekend(test_df)
     
-    print(f"\nFinal Train/Test Split:")
-    print(f"  Train: {len(train_df)} days ({train_df.iloc[0]['ds'].strftime('%Y-%m-%d')} to {train_df.iloc[-1]['ds'].strftime('%Y-%m-%d')})")
-    print(f"  Test (holdout): {len(test_df)} days ({test_df.iloc[0]['ds'].strftime('%Y-%m-%d')} to {test_df.iloc[-1]['ds'].strftime('%Y-%m-%d')})")
-    
     # Step 3: Run time series cross-validation on training data
     cv_results = run_time_series_cv(location, train_df, n_folds=n_cv_folds, test_size=test_size)
     

@@ -82,6 +82,11 @@ def prepare_location_data(df: pd.DataFrame, location: str) -> Tuple[pd.DataFrame
     
     # Filter to valid date range
     filtered = df[df['date'] >= start_date].copy()
+
+    # Sort by date and interpolate any remaining gaps (if any)
+    filtered = filtered.sort_values('date')
+    filtered[location_col] = filtered[location_col].interpolate(method='linear')
+
     
     # Prepare Prophet format (requires 'ds' and 'y' columns)
     prophet_df = pd.DataFrame({
@@ -89,7 +94,7 @@ def prepare_location_data(df: pd.DataFrame, location: str) -> Tuple[pd.DataFrame
         'y': filtered[location_col]
     })
     
-    # Remove any remaining nulls (Prophet can handle some, but cleaner this way)
+    # Remove any remaining nulls
     prophet_df = prophet_df.dropna()
     
     metadata = {
