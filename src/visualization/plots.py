@@ -18,7 +18,7 @@ def plot_test_period_zoom(
     location: str,
     test_df: pd.DataFrame,
     forecast: pd.DataFrame,
-    output_dir: str = "models"
+    output_dir: str = "models",
 ) -> str:
     """
     Create visualization showing test period comparison and future forecast.
@@ -103,8 +103,16 @@ def plot_test_period_zoom(
     # Calculate and display metrics using calculate_metrics
     y_true = test_df["y"].values
     y_pred = test_forecast["yhat"].values
-    lower = test_forecast["yhat_lower"].values if "yhat_lower" in test_forecast.columns else None
-    upper = test_forecast["yhat_upper"].values if "yhat_upper" in test_forecast.columns else None
+    lower = (
+        test_forecast["yhat_lower"].values
+        if "yhat_lower" in test_forecast.columns
+        else None
+    )
+    upper = (
+        test_forecast["yhat_upper"].values
+        if "yhat_upper" in test_forecast.columns
+        else None
+    )
     metrics = calculate_metrics(y_true, y_pred, lower, upper)
     metrics_text = (
         f"Test Period Metrics:\n"
@@ -134,7 +142,6 @@ def plot_test_period_zoom(
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
 
-
     ax.text(
         0.02,
         0.98,
@@ -163,7 +170,6 @@ def plot_test_period_zoom(
     # Save plot
     plot_file = output_path / f"location_{location}_forecast_plot.png"
     plt.savefig(plot_file, dpi=150, bbox_inches="tight")
-
 
     plt.close()
 
