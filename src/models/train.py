@@ -12,15 +12,15 @@ from typing import Dict
 
 import pandas as pd
 
-from src.processing.cleaning import load_raw_data, prepare_location_data
-from src.models.prophet_model import create_prophet_model
+from src.data.splits import save_data_splits, split_train_test
 from src.models.evaluate import (
+    METRIC_KEYS,
     evaluate_model,
     evaluate_naive_baseline,
     run_time_series_cv,
-    METRIC_KEYS,
 )
-from src.data.splits import split_train_test, save_data_splits
+from src.models.prophet_model import create_prophet_model
+from src.processing.cleaning import load_raw_data, prepare_location_data
 
 
 def _extract_cv_metrics(cv_results: Dict, prefix: str = "") -> Dict:
@@ -48,7 +48,7 @@ def _add_is_weekend(df: pd.DataFrame) -> pd.DataFrame:
 def train_location_model(
     location: str,
     data_path: str,
-    output_dir: str = "models",
+    artifacts_dir: str = "artifacts",
     n_cv_folds: int = 5,
     test_size: int = 30,
 ) -> Dict:
@@ -58,7 +58,7 @@ def train_location_model(
     Args:
         location: Location identifier ('A', 'B', or 'C')
         data_path: Path to the raw CSV data
-        output_dir: Directory to save trained models and forecasts
+        artifacts_dir: Directory to save trained models and forecasts
         n_cv_folds: Number of cross-validation folds
         test_size: Number of days to hold out for testing
 
@@ -107,7 +107,9 @@ def train_location_model(
     )
 
     # Step 5: Save data splits for reproducibility
-    splits_file = save_data_splits(location, train_df, test_df, cv_results, output_dir)
+    splits_file = save_data_splits(
+        location, train_df, test_df, cv_results, artifacts_dir
+    )
 
     # Step 6: Retrain on full dataset for production
     print("\nRetraining on full dataset for production...")
@@ -115,7 +117,7 @@ def train_location_model(
     final_model.fit(location_df)
 
     # Save model artifact
-    output_path = Path(output_dir)
+    output_path = Path(artifacts_dir)
     output_path.mkdir(exist_ok=True)
 
     model_file = output_path / f"location_{location}_model.pkl"
@@ -154,14 +156,16 @@ def train_location_model(
 
 
 def train_all_locations(
-    data_path: str = "data-4-.csv", output_dir: str = "models", locations: list = None
+    data_path: str = "data-4-.csv",
+    artifacts_dir: str = "artifacts",
+    locations: list = None,
 ) -> Dict:
     """
     Train models for all specified locations.
 
     Args:
         data_path: Path to the raw CSV data
-        output_dir: Directory to save trained models and forecasts
+        artifacts_dir: Directory to save trained models and forecasts
         locations: List of location identifiers (default: ['A', 'B', 'C'])
 
     Returns:
@@ -174,7 +178,7 @@ def train_all_locations(
 
     for location in locations:
         try:
-            results = train_location_model(location, data_path, output_dir)
+            results = train_location_model(location, data_path, artifacts_dir)
             all_results[location] = results
         except Exception as e:
             print(f"\n❌ Error training location {location}: {e}")

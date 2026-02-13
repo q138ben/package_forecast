@@ -5,11 +5,15 @@ This API exposes forecasts for three logistics locations (A, B, C).
 Each endpoint returns 30-day predictions with uncertainty intervals.
 """
 
+import os
+from pathlib import Path
+from typing import List, Optional
+
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
-import pandas as pd
-from pathlib import Path
+
+ARTIFACTS_DIR = os.environ.get("ARTIFACTS_DIR", "artifacts")
 from datetime import datetime
 
 app = FastAPI(
@@ -53,7 +57,7 @@ def load_forecast(location: str) -> pd.DataFrame:
     # Use absolute path based on this file's location
     # This works both locally and in Docker/Cloud Run
     base_dir = Path(__file__).resolve().parent.parent.parent
-    forecast_file = base_dir / "models" / f"location_{location}_forecast.csv"
+    forecast_file = base_dir / ARTIFACTS_DIR / f"location_{location}_forecast.csv"
 
     if not forecast_file.exists():
         raise FileNotFoundError(f"Forecast for location {location} not found")
@@ -140,9 +144,8 @@ async def ready():
     """
     base_dir = Path(__file__).resolve().parent.parent.parent
     missing = []
-
     for location in ["A", "B", "C"]:
-        forecast_file = base_dir / "models" / f"location_{location}_forecast.csv"
+        forecast_file = base_dir / ARTIFACTS_DIR / f"location_{location}_forecast.csv"
         if not forecast_file.exists():
             missing.append(location)
 

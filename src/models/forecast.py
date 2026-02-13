@@ -11,15 +11,15 @@ from typing import Dict, Optional
 
 import pandas as pd
 
-from src.visualization.plots import plot_test_period_zoom
 from src.models.train import _add_is_weekend
+from src.visualization.plots import plot_test_period_zoom
 
 
 def forecast_location(
     location: str,
     model_path: Optional[str] = None,
     forecast_days: int = 30,
-    output_dir: str = "models",
+    artifacts_dir: str = "artifacts",
 ) -> Dict:
     """
     Generate forecast for a specific location using a trained model.
@@ -28,7 +28,7 @@ def forecast_location(
         location: Location identifier ('A', 'B', or 'C')
         model_path: Path to the trained model pickle file (optional)
         forecast_days: Number of days to forecast into the future
-        output_dir: Directory to save forecasts
+        artifacts_dir: Directory to save forecasts
 
     Returns:
         Dictionary with forecast results and metadata
@@ -39,7 +39,7 @@ def forecast_location(
 
     # Load the trained model
     if model_path is None:
-        model_path = Path(output_dir) / f"location_{location}_model.pkl"
+        model_path = Path(artifacts_dir) / f"location_{location}_model.pkl"
     else:
         model_path = Path(model_path)
 
@@ -74,7 +74,7 @@ def forecast_location(
         future_forecast[col] = future_forecast[col].clip(lower=0)
 
     # Save forecast
-    output_path = Path(output_dir)
+    output_path = Path(artifacts_dir)
     output_path.mkdir(exist_ok=True)
 
     forecast_file = output_path / f"location_{location}_forecast.csv"
@@ -87,7 +87,9 @@ def forecast_location(
         print("Generating visualization...")
         test_df = pd.read_csv(test_data_file)
         test_df["ds"] = pd.to_datetime(test_df["ds"])
-        plot_file = plot_test_period_zoom(location, test_df, full_forecast, output_dir)
+        plot_file = plot_test_period_zoom(
+            location, test_df, full_forecast, artifacts_dir
+        )
     else:
         print(
             f"Warning: Test data not found at {test_data_file}. Skipping visualization."
@@ -123,13 +125,13 @@ def forecast_location(
 
 
 def forecast_all_locations(
-    output_dir: str = "models", locations: list = None, forecast_days: int = 30
+    artifacts_dir: str = "artifacts", locations: list = None, forecast_days: int = 30
 ) -> Dict:
     """
     Generate forecasts for all specified locations.
 
     Args:
-        output_dir: Directory containing trained models and to save forecasts
+        artifacts_dir: Directory containing trained models and to save forecasts
         locations: List of location identifiers (default: ['A', 'B', 'C'])
         forecast_days: Number of days to forecast into the future
 
@@ -144,7 +146,7 @@ def forecast_all_locations(
     for location in locations:
         try:
             forecast_stats = forecast_location(
-                location, output_dir=output_dir, forecast_days=forecast_days
+                location, artifacts_dir=artifacts_dir, forecast_days=forecast_days
             )
             all_forecasts[location] = forecast_stats
         except Exception as e:

@@ -1,0 +1,47 @@
+{
+  "location": "A",
+  "metadata": {
+    "location": "A",
+    "start_date": "2022-01-02",
+    "end_date": "2025-08-31",
+    "n_days": 1338,
+    "mean_packages": 13763.831838565022,
+    "std_packages": 7206.15154196378
+  },
+  "cv_metrics": {
+    "n_folds": 5,
+    "avg_rmse": 3135.5094800527386,
+    "std_rmse": 1051.5872843397244,
+    "avg_mae": 2254.7272100561972,
+    "std_mae": 691.5029220466926,
+    "avg_wape": 19.87337962336441,
+    "std_wape": 9.814344735232462,
+    "avg_interval_coverage": 80.0,
+    "std_interval_coverage": 11.73787790777268
+  },
+  "baseline_cv_metrics": {
+    "n_folds": 5,
+    "avg_rmse": 3346.108936507639,
+    "std_rmse": 1257.6705338403954,
+    "avg_mae": 2408.4266666666667,
+    "std_mae": 1054.8597959286658,
+    "avg_wape": 20.50456147908161,
+    "std_wape": 12.945697315688772,
+    "avg_interval_coverage": 90.66666666666666,
+    "std_interval_coverage": 3.2659863237108993
+  },
+  "test_metrics": {
+    "rmse": 5390.973494079667,
+    "mae": 3470.826943829957,
+    "wape": 17.112140531795973,
+    "interval_coverage": 80.0
+  },
+  "baseline_test_metrics": {
+    "rmse": 5249.553717539552,
+    "mae": 3546.4333333333334,
+    "wape": 17.484901024676038,
+    "interval_coverage": 93.33333333333333
+  },
+  "model_file": "artifacts/location_A_model.pkl",
+  "splits_file": "artifacts/location_A_splits.json"
+}

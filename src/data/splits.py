@@ -35,7 +35,7 @@ def save_data_splits(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     cv_results: Dict,
-    output_dir: str = "models",
+    artifacts_dir: str = "artifacts",
 ) -> str:
     """
     Save train/test split and CV fold information for reproducibility.
@@ -50,7 +50,7 @@ def save_data_splits(
     Returns:
         Path to saved splits file
     """
-    output_path = Path(output_dir)
+    output_path = Path(artifacts_dir)
     output_path.mkdir(exist_ok=True)
 
     splits_info = {
@@ -86,7 +86,7 @@ def save_data_splits(
     return str(splits_file)
 
 
-def load_data_splits(location: str, output_dir: str = "models") -> Dict:
+def load_data_splits(location: str, artifacts_dir: str = "artifacts") -> Dict:
     """
     Load saved data split information.
 
@@ -97,7 +97,7 @@ def load_data_splits(location: str, output_dir: str = "models") -> Dict:
     Returns:
         Dictionary with split information
     """
-    splits_file = Path(output_dir) / f"location_{location}_splits.json"
+    splits_file = Path(artifacts_dir) / f"location_{location}_splits.json"
 
     with open(splits_file, "r") as f:
         splits_info = json.load(f)

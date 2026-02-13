@@ -18,7 +18,7 @@ def plot_test_period_zoom(
     location: str,
     test_df: pd.DataFrame,
     forecast: pd.DataFrame,
-    output_dir: str = "models",
+    artifacts_dir: str = "artifacts",
 ) -> str:
     """
     Create visualization showing test period comparison and future forecast.
@@ -33,7 +33,7 @@ def plot_test_period_zoom(
     Returns:
         Path to saved plot file
     """
-    output_path = Path(output_dir)
+    output_path = Path(artifacts_dir)
     output_path.mkdir(exist_ok=True)
 
     fig, ax = plt.subplots(1, 1, figsize=(14, 6))
