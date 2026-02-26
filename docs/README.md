@@ -1,6 +1,6 @@
 # Package Forecasting Service
 
-This project provides an automated forecasting solution for daily package volumes at three logistics locations. It includes data analysis, machine learning modeling, and a REST API to expose predictions. Avoid "AI-generated looking code" (keep it simple, idiomatic, and well-commented).
+This project provides an automated forecasting solution for daily package volumes at three logistics locations. It includes data analysis, machine learning modeling, and a REST API to expose predictions.
 
 ## Overview
 
@@ -60,8 +60,6 @@ The API will be available at `http://localhost:8000`
 
 ### 5. Access Forecasts
 - **Interactive docs**: http://localhost:8000/docs
-- **Single location**: `GET /forecast/A` (or B, C)
-- **All locations**: `GET /forecasts/all`
 
 Example response:
 ```json
