@@ -43,11 +43,6 @@ jobs:
         run: |
           pytest tests/ --cov=src --cov-report=term-missing -v
 
-      - name: Test API locally
-        run: |
-          python main.py serve
-
-
   deploy:
     name: Deploy to Cloud Run
     runs-on: ubuntu-latest
