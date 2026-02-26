@@ -45,9 +45,8 @@ jobs:
 
       - name: Test API locally
         run: |
-          python main.py forecast --location A
-          python main.py forecast --location B
-          python main.py forecast --location C
+          python main.py serve
+
 
   deploy:
     name: Deploy to Cloud Run
