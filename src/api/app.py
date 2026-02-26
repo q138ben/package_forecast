@@ -38,8 +38,6 @@ class ForecastPoint(BaseModel):
 class ForecastResponse(BaseModel):
     """Response model for forecast endpoint."""
 
-    location: str
-    forecast_generated: str
     horizon_days: int
     forecasts: List[ForecastPoint]
 
@@ -110,18 +108,20 @@ async def root(location: Optional[str] = None, date: Optional[str] = None):
                     results[loc] = {"error": f"No forecast found for date {date}"}
                     continue
 
-            forecasts = []
-            for _, row in forecast_df.iterrows():
-                forecasts.append(
-                    {
-                        "date": row["date"],
-                        "forecast": round(row["forecast"], 2),
-                        "lower_bound": round(row["lower_bound"], 2),
-                        "upper_bound": round(row["upper_bound"], 2),
-                    }
+            forecasts = [
+                ForecastPoint(
+                    date=row["date"],
+                    forecast=round(row["forecast"], 2),
+                    lower_bound=round(row["lower_bound"], 2),
+                    upper_bound=round(row["upper_bound"], 2),
                 )
+                for _, row in forecast_df.iterrows()
+            ]
 
-            results[loc] = {"horizon_days": len(forecasts), "forecasts": forecasts}
+            results[loc] = ForecastResponse(
+                            horizon_days=len(forecasts),
+                            forecasts=forecasts,
+                            )
         except FileNotFoundError:
             results[loc] = {"error": f"Forecast not available for location {loc}"}
 
