@@ -1,0 +1,244 @@
+name: Model Training & Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_version:
+        description: 'Model version tag'
+        required: false
+        default: 'auto'
+      retrain_all:
+        description: 'Retrain all locations'
+        type: boolean
+        default: true
+  schedule:
+    # Run weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+  push:
+    paths:
+      - 'src/models/**'
+      - 'src/data/**'
+      - 'src/processing/**'
+      - 'data-*.csv'
+
+env:
+  PYTHON_VERSION: '3.11'
+  ARTIFACTS_BUCKET: 'gs://package-forecast-artifacts'
+
+jobs:
+  train-models:
+    name: Train Forecasting Models
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      id-token: write
+    
+    outputs:
+      model_version: ${{ steps.version.outputs.version }}
+      training_status: ${{ steps.train.outcome }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install mlflow tensorboard
+
+      - name: Generate model version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.model_version }}" = "auto" ] || [ -z "${{ github.event.inputs.model_version }}" ]; then
+            VERSION="v$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
+          else
+            VERSION="${{ github.event.inputs.model_version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "MODEL_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Generated model version: $VERSION"
+
+      - name: Run data validation
+        run: |
+          python scripts/validate_data.py --input data-4-.csv --output validation-report.json
+          
+      - name: Train models
+        id: train
+        run: |
+          echo "Training models with version: $MODEL_VERSION"
+          python main.py train --data-path data-4-.csv --artifacts-dir artifacts
+        env:
+          MODEL_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Generate forecasts
+        run: |
+          python main.py forecast --artifacts-dir artifacts
+
+      - name: Extract training metrics
+        id: metrics
+        run: |
+          python scripts/extract_metrics.py --artifacts-dir artifacts --output metrics-summary.json
+
+      - name: Upload training artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-artifacts-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/
+            metrics-summary.json
+            validation-report.json
+          retention-days: 90
+
+      - name: Authenticate to Google Cloud
+        if: github.ref == 'refs/heads/main'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        if: github.ref == 'refs/heads/main'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to GCS
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Create versioned directory in GCS
+          gsutil -m cp -r artifacts/* gs://package-forecast-artifacts/$MODEL_VERSION/
+          
+          # Also update 'latest' pointer
+          echo "$MODEL_VERSION" > latest-version.txt
+          gsutil cp latest-version.txt gs://package-forecast-artifacts/latest-version.txt
+          
+          # Copy metrics
+          gsutil cp metrics-summary.json gs://package-forecast-artifacts/$MODEL_VERSION/metrics-summary.json
+        continue-on-error: true
+
+      - name: Create model registry entry
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/register_model.py \
+            --version "$MODEL_VERSION" \
+            --metrics metrics-summary.json \
+            --artifacts-dir artifacts \
+            --git-commit "${{ github.sha }}" \
+            --output model-registry.json
+
+      - name: Commit model registry update
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          mkdir -p .model-registry
+          cp model-registry.json .model-registry/$MODEL_VERSION.json
+          
+          git add .model-registry/$MODEL_VERSION.json
+          git commit -m "Register model version $MODEL_VERSION [skip ci]" || echo "No changes to commit"
+          git push || echo "Failed to push model registry"
+        continue-on-error: true
+
+      - name: Comment training summary on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let metrics = {};
+            try {
+              metrics = JSON.parse(fs.readFileSync('metrics-summary.json', 'utf8'));
+            } catch (e) {
+              metrics = { error: 'Could not read metrics' };
+            }
+            
+            const comment = `## Model Training Results 🤖
+            
+            **Version:** \`${{ steps.version.outputs.version }}\`
+            **Status:** ${{ steps.train.outcome }}
+            
+            ### Performance Metrics
+            
+            | Location | RMSE | MAE | WAPE |
+            |----------|------|-----|------|
+            ${metrics.location_A ? `| A | ${metrics.location_A.rmse.toFixed(2)} | ${metrics.location_A.mae.toFixed(2)} | ${metrics.location_A.wape.toFixed(2)}% |` : ''}
+            ${metrics.location_B ? `| B | ${metrics.location_B.rmse.toFixed(2)} | ${metrics.location_B.mae.toFixed(2)} | ${metrics.location_B.wape.toFixed(2)}% |` : ''}
+            ${metrics.location_C ? `| C | ${metrics.location_C.rmse.toFixed(2)} | ${metrics.location_C.mae.toFixed(2)} | ${metrics.location_C.wape.toFixed(2)}% |` : ''}
+            
+            See artifacts for detailed results.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  evaluate-models:
+    name: Evaluate Model Performance
+    runs-on: ubuntu-latest
+    needs: train-models
+    if: needs.train-models.outputs.training_status == 'success'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download training artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: training-artifacts-${{ needs.train-models.outputs.model_version }}
+          path: artifacts/
+
+      - name: Run evaluation suite
+        run: |
+          python scripts/evaluate_models.py \
+            --artifacts-dir artifacts \
+            --output evaluation-report.json
+
+      - name: Generate evaluation visualizations
+        run: |
+          python scripts/generate_evaluation_plots.py \
+            --artifacts-dir artifacts \
+            --output evaluation-plots/
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results-${{ needs.train-models.outputs.model_version }}
+          path: |
+            evaluation-report.json
+            evaluation-plots/
+          retention-days: 90
+
+      - name: Check performance thresholds
+        id: threshold
+        run: |
+          python scripts/check_thresholds.py \
+            --metrics evaluation-report.json \
+            --thresholds config/model-thresholds.yml
+        continue-on-error: true
+
+      - name: Notify on threshold failure
+        if: steps.threshold.outcome == 'failure'
+        run: |
+          echo "::warning::Model performance below acceptable thresholds"

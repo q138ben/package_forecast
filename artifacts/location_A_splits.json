@@ -1,6 +1,6 @@
 {
   "location": "A",
-  "created_at": "2026-02-13T22:23:39.171803",
+  "created_at": "2026-02-27T09:56:57.925780",
   "final_split": {
     "train": {
       "start_date": "2022-01-02",
@@ -104,7 +104,7 @@
         "rmse": 3751.2904453854144,
         "mae": 3386.204181926829,
         "wape": 38.19142134267379,
-        "interval_coverage": 66.66666666666666
+        "interval_coverage": 70.0
       },
       "baseline_metrics": {
         "rmse": 4660.5920653925505,

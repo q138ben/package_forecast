@@ -1,0 +1,118 @@
+# Deployment Environments Configuration
+
+environments:
+  production:
+    gcp_project: "${GCP_PROJECT_ID}"
+    region: "us-central1"
+    service_name: "package-forecast"
+    
+    cloud_run:
+      memory: "2Gi"
+      cpu: "2"
+      timeout: 300
+      max_instances: 10
+      min_instances: 1
+      concurrency: 80
+      
+    environment_variables:
+      ENV: "production"
+      LOG_LEVEL: "INFO"
+      
+    artifacts:
+      bucket: "gs://package-forecast-artifacts"
+      retention_days: 365
+  
+  staging:
+    gcp_project: "${GCP_PROJECT_ID}"
+    region: "us-central1"
+    service_name: "package-forecast-staging"
+    
+    cloud_run:
+      memory: "1Gi"
+      cpu: "1"
+      timeout: 300
+      max_instances: 5
+      min_instances: 0
+      concurrency: 80
+      
+    environment_variables:
+      ENV: "staging"
+      LOG_LEVEL: "DEBUG"
+      
+    artifacts:
+      bucket: "gs://package-forecast-artifacts-staging"
+      retention_days: 90
+
+# Monitoring and alerting
+monitoring:
+  health_check:
+    enabled: true
+    frequency: "*/6 * * * *"  # Every 6 hours
+    endpoints:
+      - "/health"
+      - "/ready"
+  
+  performance:
+    enabled: true
+    metrics:
+      - "request_count"
+      - "request_latencies"
+      - "cpu_utilization"
+      - "memory_utilization"
+  
+  alerts:
+    channels:
+      - type: "github_issues"
+        labels: ["monitoring", "alert", "production"]
+      - type: "email"
+        recipients: []  # Add email addresses
+  
+  thresholds:
+    response_time_ms: 2000
+    error_rate_pct: 5
+    cpu_utilization_pct: 80
+    memory_utilization_pct: 85
+
+# Model versioning
+versioning:
+  strategy: "timestamp-git"
+  format: "v{YYYYMMDD-HHmmss}-{git_short_sha}"
+  
+  promotion:
+    auto_promote: false
+    required_approvals: 1
+    thresholds:
+      average_wape: 15
+      overall_score: 70
+
+# Artifact management
+artifacts:
+  storage:
+    type: "gcs"
+    versioning: true
+    lifecycle:
+      - condition: "age > 90d"
+        action: "delete"
+        exclude_tags: ["production"]
+  
+  registry:
+    location: ".model-registry"
+    format: "json"
+
+# CI/CD configuration
+cicd:
+  training:
+    schedule: "0 3 * * 0"  # Weekly on Sundays at 3 AM
+    trigger_on_data_change: true
+    cv_folds: 5
+    test_days: 30
+  
+  deployment:
+    auto_deploy: true
+    rollback_on_failure: true
+    smoke_tests: true
+    
+  retention:
+    artifacts_days: 90
+    logs_days: 30
+    deployment_records_days: 365

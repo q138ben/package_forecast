@@ -1,0 +1,33 @@
+# Model Performance Thresholds
+# These thresholds determine if a model is acceptable for production deployment
+
+# Overall evaluation score (0-100)
+overall_score:
+  min: 70  # Minimum acceptable overall score
+
+# Per-location metric thresholds
+per_location:
+  wape:  # Weighted Absolute Percentage Error
+    max: 20  # Maximum 20% WAPE
+  
+  rmse:  # Root Mean Square Error
+    max: 150  # Maximum RMSE of 150 packages
+  
+  mae:  # Mean Absolute Error
+    max: 100  # Maximum MAE of 100 packages
+  
+  interval_coverage:  # Prediction interval coverage
+    min: 80  # At least 80% of actual values should fall within prediction intervals
+
+# Cross-validation thresholds
+cross_validation:
+  avg_wape:
+    max: 22  # Slightly higher threshold for CV as it's more conservative
+  
+  std_wape:
+    max: 5  # Standard deviation should be low (consistent performance)
+
+# Data quality requirements
+data_quality:
+  min_training_days: 180  # At least 6 months of training data
+  max_missing_pct: 5  # Maximum 5% missing values

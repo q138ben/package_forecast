@@ -22,6 +22,7 @@ plotly
 nbformat
 holidays
 ruff
+PyYAML>=6.0
 
 # Testing
 pytest>=7.4.0

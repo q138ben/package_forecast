@@ -4,18 +4,71 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      skip_training:
+        description: 'Skip model training'
+        type: boolean
+        default: false
+      deploy_env:
+        description: 'Deployment environment'
+        type: choice
+        options:
+          - production
+          - staging
+        default: production
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: us-central1
   APP_NAME: package-forecast
+  PYTHON_VERSION: '3.11'
 
 jobs:
+  validate-data:
+    name: Validate Data
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run data validation
+        id: validation
+        run: |
+          python scripts/validate_data.py --input data-4-.csv --output validation-report.json
+        continue-on-error: true
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report
+          path: validation-report.json
+          retention-days: 30
+
+      - name: Check validation result
+        if: steps.validation.outcome == 'failure'
+        run: |
+          echo "::warning::Data validation failed. Please review the validation report."
+
   test:
-    name: Run Tests
+    name: Run Tests & Linting
     runs-on: ubuntu-latest
     
     steps:
@@ -25,29 +78,190 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov httpx
+          pip install pytest pytest-cov httpx ruff
 
       - name: Run linting
         run: |
-          pip install ruff
-          ruff check src/ || true
+          ruff check src/ tests/ --output-format=github || true
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          pytest tests/ --cov=src --cov-report=term-missing -v
+          pytest tests/ --cov=src --cov-report=term-missing --cov-report=xml -v
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  train-models:
+    name: Train & Evaluate Models
+    runs-on: ubuntu-latest
+    needs: [test, validate-data]
+    if: |
+      github.ref == 'refs/heads/main' && 
+      github.event_name == 'push' && 
+      github.event.inputs.skip_training != 'true'
+    
+    permissions:
+      contents: write
+      id-token: write
+    
+    outputs:
+      model_version: ${{ steps.version.outputs.version }}
+      artifacts_uploaded: ${{ steps.upload.outcome }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate model version
+        id: version
+        run: |
+          VERSION="v$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "MODEL_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Generated model version: $VERSION"
+
+      - name: Train models
+        run: |
+          python main.py train --data-path data-4-.csv --artifacts-dir artifacts
+        env:
+          MODEL_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Generate forecasts
+        run: |
+          python main.py forecast --artifacts-dir artifacts
+
+      - name: Extract metrics
+        run: |
+          python scripts/extract_metrics.py --artifacts-dir artifacts --output metrics-summary.json
+
+      - name: Evaluate models
+        run: |
+          python scripts/evaluate_models.py --artifacts-dir artifacts --output evaluation-report.json
+
+      - name: Upload artifacts locally
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/
+            metrics-summary.json
+            evaluation-report.json
+          retention-days: 90
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to GCS
+        run: |
+          gsutil -m cp -r artifacts/* gs://package-forecast-artifacts/${{ steps.version.outputs.version }}/ || true
+          echo "${{ steps.version.outputs.version }}" > latest-version.txt
+          gsutil cp latest-version.txt gs://package-forecast-artifacts/latest-version.txt || true
+        continue-on-error: true
+
+      - name: Register model
+        run: |
+          python scripts/register_model.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --metrics metrics-summary.json \
+            --artifacts-dir artifacts \
+            --git-commit "${{ github.sha }}" \
+            --output model-registry.json
+
+  build-and-push:
+    name: Build & Push Container
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: |
+          gcloud auth configure-docker
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: gcr.io/${{ env.PROJECT_ID }}/${{ env.APP_NAME }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}}
+
+      - name: Enable necessary APIs
+        run: |
+          gcloud services enable cloudbuild.googleapis.com run.googleapis.com --project $PROJECT_ID
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG="gcr.io/$PROJECT_ID/$APP_NAME:$(date +%Y%m%d-%H%M%S)-${{ github.sha }}"
+          
+          gcloud builds submit \
+            --tag $IMAGE_TAG \
+            --tag gcr.io/$PROJECT_ID/$APP_NAME:latest \
+            --project $PROJECT_ID
+          
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy to Cloud Run
     runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [train-models, build-and-push]
+    if: |
+      github.ref == 'refs/heads/main' && 
+      github.event_name == 'push' &&
+      (needs.train-models.result == 'success' || needs.train-models.result == 'skipped')
     
     permissions:
       contents: read
@@ -65,35 +279,112 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
-        run: |
-          gcloud auth configure-docker
-
-      - name: Enable necessary APIs
-        run: |
-          gcloud services enable cloudbuild.googleapis.com run.googleapis.com --project $PROJECT_ID
-
-      - name: Build and push Docker image
-        run: |
-          gcloud builds submit --tag gcr.io/$PROJECT_ID/$APP_NAME --project $PROJECT_ID
-
       - name: Deploy to Cloud Run
+        id: deploy
         run: |
           gcloud run deploy $APP_NAME \
-            --image gcr.io/$PROJECT_ID/$APP_NAME \
+            --image gcr.io/$PROJECT_ID/$APP_NAME:latest \
             --platform managed \
             --region $REGION \
             --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars MODEL_VERSION="${{ needs.train-models.outputs.model_version }}" \
             --project $PROJECT_ID
 
       - name: Get service URL
+        id: url
         run: |
           URL=$(gcloud run services describe $APP_NAME --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID)
           echo "Service deployed to: $URL"
-          echo "SERVICE_URL=$URL" >> $GITHUB_ENV
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Wait for service to be ready
+        run: |
+          sleep 15
 
       - name: Verify deployment
         run: |
-          sleep 10
-          curl -f ${{ env.SERVICE_URL }}/health || exit 1
-          curl -f ${{ env.SERVICE_URL }}/ready || exit 1
+          curl -f ${{ steps.url.outputs.url }}/health || exit 1
+          curl -f ${{ steps.url.outputs.url }}/ready || exit 1
+          
+          # Test forecast endpoints
+          for location in A B C; do
+            echo "Testing location $location..."
+            curl -f ${{ steps.url.outputs.url }}/forecast/$location || exit 1
+          done
+          
+          echo "✅ All endpoints verified successfully"
+
+      - name: Create deployment record
+        run: |
+          cat > deployment-record.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "version": "${{ needs.train-models.outputs.model_version }}",
+            "commit": "${{ github.sha }}",
+            "service_url": "${{ steps.url.outputs.url }}",
+            "region": "$REGION",
+            "status": "deployed"
+          }
+          EOF
+          
+          cat deployment-record.json
+
+      - name: Upload deployment record
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-record
+          path: deployment-record.json
+          retention-days: 365
+
+  post-deployment:
+    name: Post-Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: success()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Tag successful deployment
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
+          git tag -a "$DEPLOY_TAG" -m "Successful deployment at $(date)"
+          git push origin "$DEPLOY_TAG" || echo "Failed to push tag"
+        continue-on-error: true
+
+      - name: Cleanup old Cloud Run revisions
+        run: |
+          # Keep only the last 5 revisions
+          REVISIONS=$(gcloud run revisions list \
+            --service $APP_NAME \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --format="value(name)" \
+            --sort-by="~metadata.creationTimestamp")
+          
+          echo "$REVISIONS" | tail -n +6 | while read revision; do
+            if [ ! -z "$revision" ]; then
+              echo "Deleting old revision: $revision"
+              gcloud run revisions delete "$revision" \
+                --region $REGION \
+                --project $PROJECT_ID \
+                --quiet || true
+            fi
+          done
+        continue-on-error: true

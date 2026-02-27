@@ -1,0 +1,250 @@
+name: Monitoring & Alerts
+
+on:
+  schedule:
+    # Check every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  APP_NAME: package-forecast
+
+jobs:
+  health-check:
+    name: Service Health Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+        continue-on-error: true
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        continue-on-error: true
+
+      - name: Get service URL
+        id: get-url
+        run: |
+          URL=$(gcloud run services describe $APP_NAME \
+            --platform managed \
+            --region $REGION \
+            --format 'value(status.url)' \
+            --project $PROJECT_ID 2>/dev/null || echo "")
+          
+          if [ -z "$URL" ]; then
+            echo "Could not get service URL"
+            echo "url=http://localhost:8000" >> $GITHUB_OUTPUT
+          else
+            echo "url=$URL" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Check health endpoint
+        id: health
+        run: |
+          URL="${{ steps.get-url.outputs.url }}"
+          
+          echo "Checking health at $URL/health"
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" || echo "000")
+          
+          echo "response_code=$RESPONSE" >> $GITHUB_OUTPUT
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed with code: $RESPONSE"
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Check ready endpoint
+        id: ready
+        run: |
+          URL="${{ steps.get-url.outputs.url }}"
+          
+          echo "Checking readiness at $URL/ready"
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/ready" || echo "000")
+          
+          echo "response_code=$RESPONSE" >> $GITHUB_OUTPUT
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Ready check passed"
+          else
+            echo "❌ Ready check failed with code: $RESPONSE"
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Test forecast endpoints
+        id: forecast
+        run: |
+          URL="${{ steps.get-url.outputs.url }}"
+          
+          # Test each location
+          for LOCATION in A B C; do
+            echo "Testing location $LOCATION..."
+            
+            RESPONSE=$(curl -s "$URL/forecast/$LOCATION" || echo "{}")
+            
+            # Check if response contains expected fields
+            if echo "$RESPONSE" | grep -q "forecasts"; then
+              echo "✅ Location $LOCATION endpoint working"
+            else
+              echo "❌ Location $LOCATION endpoint failed"
+              echo "Response: $RESPONSE"
+            fi
+          done
+        continue-on-error: true
+
+      - name: Collect service metrics
+        id: metrics
+        run: |
+          # Get Cloud Run service metrics
+          gcloud run services describe $APP_NAME \
+            --platform managed \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --format json > service-metrics.json 2>/dev/null || echo "{}" > service-metrics.json
+          
+          echo "Service metrics collected"
+        continue-on-error: true
+
+      - name: Upload monitoring report
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-report-${{ github.run_number }}
+          path: |
+            service-metrics.json
+          retention-days: 30
+
+      - name: Send alert on failure
+        if: |
+          steps.health.outcome == 'failure' || 
+          steps.ready.outcome == 'failure' || 
+          steps.forecast.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Service Health Check Failed - ${new Date().toISOString()}`,
+              body: `## Service Health Alert
+              
+              The automated health check has detected issues with the deployed service.
+              
+              **Run:** ${{ github.run_number }}
+              **Timestamp:** ${new Date().toISOString()}
+              
+              ### Status
+              - Health Check: ${{ steps.health.outcome }}
+              - Ready Check: ${{ steps.ready.outcome }}
+              - Forecast Endpoints: ${{ steps.forecast.outcome }}
+              
+              ### Response Codes
+              - Health: ${{ steps.health.outputs.response_code }}
+              - Ready: ${{ steps.ready.outputs.response_code }}
+              
+              Please investigate and resolve the issue.
+              
+              [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+              labels: ['monitoring', 'alert', 'production']
+            });
+            
+            console.log(`Created issue #${issue.data.number}`);
+
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+        continue-on-error: true
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        continue-on-error: true
+
+      - name: Collect performance metrics
+        run: |
+          python scripts/collect_performance_metrics.py \
+            --project-id $PROJECT_ID \
+            --service-name $APP_NAME \
+            --output performance-metrics.json
+        continue-on-error: true
+
+      - name: Analyze model drift
+        run: |
+          python scripts/check_model_drift.py \
+            --artifacts-dir artifacts \
+            --output drift-report.json
+        continue-on-error: true
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report-${{ github.run_number }}
+          path: |
+            performance-metrics.json
+            drift-report.json
+          retention-days: 30
+
+  cost-monitoring:
+    name: Cost Monitoring
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+        continue-on-error: true
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        continue-on-error: true
+
+      - name: Estimate current costs
+        run: |
+          echo "Checking Cloud Run costs..."
+          
+          # Get service revision count
+          REVISIONS=$(gcloud run revisions list \
+            --service $APP_NAME \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --format="value(name)" 2>/dev/null | wc -l || echo "0")
+          
+          echo "Active revisions: $REVISIONS"
+          
+          # Get container metrics
+          gcloud run services describe $APP_NAME \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --format="value(spec.template.spec.containers[0].resources)" 2>/dev/null || echo "No data"
+        continue-on-error: true

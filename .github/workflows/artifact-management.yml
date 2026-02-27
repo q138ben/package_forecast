@@ -1,0 +1,156 @@
+name: Artifact Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - list-versions
+          - promote-to-production
+          - rollback
+          - cleanup-old
+      version:
+        description: 'Version (for promote/rollback)'
+        required: false
+
+env:
+  ARTIFACTS_BUCKET: 'gs://package-forecast-artifacts'
+
+jobs:
+  manage-artifacts:
+    name: Manage Model Artifacts
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: List versions
+        if: github.event.inputs.action == 'list-versions'
+        run: |
+          echo "Available model versions in GCS:"
+          gsutil ls $ARTIFACTS_BUCKET/ | grep -E 'v[0-9]' || echo "No versions found"
+          
+          echo -e "\nLocal model registry:"
+          if [ -d ".model-registry" ]; then
+            ls -lh .model-registry/
+          else
+            echo "No local registry found"
+          fi
+
+      - name: Promote to production
+        if: github.event.inputs.action == 'promote-to-production'
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          if [ -z "$VERSION" ]; then
+            echo "Error: Version required for promotion"
+            exit 1
+          fi
+          
+          echo "Promoting version $VERSION to production..."
+          
+          # Update production pointer in GCS
+          echo "$VERSION" > production-version.txt
+          gsutil cp production-version.txt $ARTIFACTS_BUCKET/production-version.txt
+          
+          # Tag in git
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "prod-$VERSION" -m "Promote $VERSION to production"
+          git push origin "prod-$VERSION"
+          
+          echo "✅ Version $VERSION promoted to production"
+
+      - name: Rollback
+        if: github.event.inputs.action == 'rollback'
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          if [ -z "$VERSION" ]; then
+            echo "Error: Version required for rollback"
+            exit 1
+          fi
+          
+          echo "Rolling back to version $VERSION..."
+          
+          # Check if version exists
+          if gsutil -q stat $ARTIFACTS_BUCKET/$VERSION/latest-version.txt; then
+            echo "$VERSION" > production-version.txt
+            gsutil cp production-version.txt $ARTIFACTS_BUCKET/production-version.txt
+            echo "✅ Rolled back to version $VERSION"
+          else
+            echo "Error: Version $VERSION not found in artifacts"
+            exit 1
+          fi
+
+      - name: Cleanup old versions
+        if: github.event.inputs.action == 'cleanup-old'
+        run: |
+          echo "Cleaning up old model versions (keeping last 10)..."
+          
+          # List all versions
+          VERSIONS=$(gsutil ls $ARTIFACTS_BUCKET/ | grep -E 'v[0-9]' | sort -r)
+          
+          # Keep only the last 10 versions
+          echo "$VERSIONS" | tail -n +11 | while read VERSION_PATH; do
+            echo "Removing old version: $VERSION_PATH"
+            gsutil -m rm -r "$VERSION_PATH" || true
+          done
+          
+          echo "✅ Cleanup completed"
+
+  sync-artifacts:
+    name: Sync Artifacts to Production
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'promote-to-production'
+    needs: manage-artifacts
+    
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download production artifacts
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          echo "Downloading production artifacts for version $VERSION..."
+          mkdir -p production-artifacts
+          
+          gsutil -m cp -r $ARTIFACTS_BUCKET/$VERSION/* production-artifacts/
+          
+          echo "✅ Production artifacts downloaded"
+
+      - name: Upload to artifact storage
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-artifacts-${{ github.event.inputs.version }}
+          path: production-artifacts/
+          retention-days: 365  # Keep production artifacts for 1 year

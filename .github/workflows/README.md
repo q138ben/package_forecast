@@ -1,97 +1,82 @@
-# GitHub Actions CI/CD Pipeline
+# GitHub Actions Workflows
 
-This directory contains automated workflows for testing and deployment.
+This directory contains all CI/CD workflow definitions for the Package Forecast project with comprehensive MLOps capabilities.
 
-## Workflow: ci-cd.yml
+## Workflows Overview
 
-### Triggers
-- **Pull Requests**: Runs tests on all PRs to `main`
-- **Push to main**: Runs tests + deploys to Google Cloud Run
+### 1. Main CI/CD Pipeline (`ci-cd.yml`)
+**Purpose:** Main continuous integration and deployment pipeline
 
-### Jobs
+**Triggers:** Push to main/develop, PRs to main, manual dispatch
 
-#### 1. Test Job
-Runs on every push and PR:
-- Linting with `ruff`
-- Unit tests with `pytest`
-- Code coverage reporting
-- Local API testing
+**Jobs:**
+1. `validate-data` - Validate data quality
+2. `test` - Run tests and linting
+3. `train-models` - Train forecasting models
+4. `build-and-push` - Build Docker image
+5. `deploy` - Deploy to Cloud Run
+6. `post-deployment` - Cleanup and tagging
 
-#### 2. Deploy Job
-Runs only on pushes to `main`:
-- Authenticates to Google Cloud
-- Builds Docker image using Cloud Build
-- Deploys to Cloud Run
-- Verifies deployment with health checks
+### 2. Data Validation (`data-validation.yml`)
+**Purpose:** Automated data quality checks
+
+**Triggers:** Daily at 2 AM UTC, manual, data file changes
+
+**Features:** Schema validation, quality checks, profiling
+
+### 3. Model Training (`model-training.yml`)
+**Purpose:** Train and evaluate forecasting models
+
+**Triggers:** Weekly on Sundays at 3 AM UTC, manual
+
+**Features:** Version generation, training, evaluation, threshold checking, GCS upload
+
+### 4. Artifact Management (`artifact-management.yml`)
+**Purpose:** Manage model versions and artifacts
+
+**Actions:** list-versions, promote-to-production, rollback, cleanup-old
+
+### 5. Monitoring (`monitoring.yml`)
+**Purpose:** Monitor service health and performance
+
+**Triggers:** Every 6 hours, manual
+
+**Features:** Health checks, performance monitoring, drift detection, alerting
 
 ## Setup Required
 
 ### GitHub Secrets
-Add these secrets to your GitHub repository (Settings → Secrets → Actions):
+1. **GCP_PROJECT_ID** - Your Google Cloud project ID
+2. **GCP_SA_KEY** - Service account JSON key
 
-1. **GCP_PROJECT_ID**: Your Google Cloud project ID
-   ```
-   example-project-123456
-   ```
+### Service Account Permissions
+- Cloud Run Admin
+- Cloud Build Editor
+- Storage Admin
+- Service Account User
+- Monitoring Viewer
 
-2. **GCP_SA_KEY**: Service account JSON key with permissions:
-   - Cloud Build Editor
-   - Cloud Run Admin
-   - Service Account User
-   - Storage Admin
+## Usage Examples
 
-   To create the service account key:
-   ```bash
-   # Create service account
-   gcloud iam service-accounts create github-actions \
-     --display-name="GitHub Actions"
-   
-   # Grant permissions
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-     --role="roles/run.admin"
-   
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-     --role="roles/cloudbuild.builds.editor"
-   
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-     --role="roles/iam.serviceAccountUser"
-   
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-     --role="roles/storage.admin"
-   
-   # Create and download key
-   gcloud iam service-accounts keys create key.json \
-     --iam-account=github-actions@PROJECT_ID.iam.gserviceaccount.com
-   
-   # Copy the contents of key.json and add as GCP_SA_KEY secret
-   ```
-
-## Local Testing
-
-Test the workflow locally before pushing:
 ```bash
-# Run tests
-pytest --cov=src --cov-report=term-missing
+# Trigger training
+gh workflow run model-training.yml
 
-# Run linting
-ruff check src/
+# Promote model
+gh workflow run artifact-management.yml \
+  -f action=promote-to-production \
+  -f version=v20260227-143052-abc123d
 
-# Test forecasts
-python main.py forecast --location A
-python main.py forecast --location B
-python main.py forecast --location C
+# Rollback
+gh workflow run artifact-management.yml \
+  -f action=rollback \
+  -f version=v20260220-120000-xyz789d
 ```
 
-## Deployment Flow
+## Documentation
 
-1. Developer pushes code or creates PR
-2. GitHub Actions triggers test job
-3. If tests pass and push is to `main`, deploy job triggers
-4. Docker image is built and pushed to GCR
-5. Cloud Run service is updated
-6. Health checks verify deployment
-7. Service URL is displayed in logs
+See comprehensive guides:
+- `docs/CICD_GUIDE.md` - Full documentation
+- `docs/CICD_QUICK_REFERENCE.md` - Quick commands
+- `docs/CICD_ARCHITECTURE.md` - Architecture diagrams
+- `SETUP_CHECKLIST.md` - Setup checklist

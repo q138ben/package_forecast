@@ -1,0 +1,95 @@
+name: Data Validation
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'data-*.csv'
+      - 'src/processing/**'
+      - 'src/data/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  validate-data:
+    name: Validate and Profile Data
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install great-expectations pandas-profiling ydata-profiling
+
+      - name: Run data validation
+        id: validate
+        run: |
+          python scripts/validate_data.py --input data-4-.csv --output validation-report.json
+        continue-on-error: true
+
+      - name: Generate data profile
+        run: |
+          python scripts/profile_data.py --input data-4-.csv --output data-profile.html
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-validation-report
+          path: validation-report.json
+          retention-days: 30
+
+      - name: Upload data profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-profile
+          path: data-profile.html
+          retention-days: 30
+
+      - name: Check validation status
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo "Data validation failed. Please review the validation report."
+          exit 1
+
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = {};
+            try {
+              report = JSON.parse(fs.readFileSync('validation-report.json', 'utf8'));
+            } catch (e) {
+              report = { status: 'error', message: 'Could not read validation report' };
+            }
+            
+            const comment = `## Data Validation Results 📊
+            
+            **Status:** ${report.status || 'unknown'}
+            **Total Checks:** ${report.total_checks || 'N/A'}
+            **Passed:** ${report.passed_checks || 'N/A'}
+            **Failed:** ${report.failed_checks || 'N/A'}
+            
+            See artifacts for detailed report.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

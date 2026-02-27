@@ -8,9 +8,14 @@ Usage:
 """
 
 import argparse
+import os
 
+from src.config import get_env, load_env_file
 from src.models.forecast import forecast_all_locations
 from src.models.train import train_all_locations
+
+# Load .env file at startup
+load_env_file()
 
 
 def train(data_path, artifacts_dir):
@@ -33,8 +38,6 @@ def forecast(artifacts_dir):
 
 def serve(artifacts_dir):
     """Start the FastAPI server."""
-    import os
-
     import uvicorn
 
     from src.api.app import app
@@ -42,9 +45,13 @@ def serve(artifacts_dir):
     # Set environment variable for app.py to pick up
     os.environ["ARTIFACTS_DIR"] = artifacts_dir
 
+    # Get host and port from environment or use defaults
+    host = get_env("API_HOST", "0.0.0.0")
+    port = int(get_env("API_PORT", "8000"))
+
     print("Starting API server...")
-    print("API documentation available at: http://localhost:8000/docs")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print(f"API documentation available at: http://{host}:{port}/docs")
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

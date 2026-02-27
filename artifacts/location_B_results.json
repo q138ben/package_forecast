@@ -16,8 +16,8 @@
     "std_mae": 422.54012007575864,
     "avg_wape": 19.764044886042868,
     "std_wape": 4.6060979148500545,
-    "avg_interval_coverage": 78.0,
-    "std_interval_coverage": 5.811865258054234
+    "avg_interval_coverage": 77.33333333333334,
+    "std_interval_coverage": 5.734883511361754
   },
   "baseline_cv_metrics": {
     "n_folds": 5,
