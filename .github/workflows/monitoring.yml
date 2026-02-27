@@ -94,7 +94,7 @@ jobs:
           for LOCATION in A B C; do
             echo "Testing location $LOCATION..."
             
-            RESPONSE=$(curl -s "$URL/forecast/$LOCATION" || echo "{}")
+            RESPONSE=$(curl -s "$URL/?location=$LOCATION" || echo "{}")
             
             # Check if response contains expected fields
             if echo "$RESPONSE" | grep -q "forecasts"; then
