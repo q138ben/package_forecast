@@ -313,7 +313,7 @@ jobs:
           # Test forecast endpoints
           for location in A B C; do
             echo "Testing location $location..."
-            curl -f ${{ steps.url.outputs.url }}/forecast/$location || exit 1
+            curl -f ${{ steps.url.outputs.url }}/?location=$location || exit 1
           done
           
           echo "✅ All endpoints verified successfully"
