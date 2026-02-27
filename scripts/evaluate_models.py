@@ -41,10 +41,10 @@ def evaluate_models(artifacts_dir: str, output_path: str):
                 "coverage_pct": (len(forecast_df) / 30) * 100,
             },
             "forecast_characteristics": {
-                "mean_forecast": float(forecast_df["yhat"].mean()),
-                "std_forecast": float(forecast_df["yhat"].std()),
-                "min_forecast": float(forecast_df["yhat"].min()),
-                "max_forecast": float(forecast_df["yhat"].max()),
+                "mean_forecast": float(forecast_df["forecast"].mean()),
+                "std_forecast": float(forecast_df["forecast"].std()),
+                "min_forecast": float(forecast_df["forecast"].min()),
+                "max_forecast": float(forecast_df["forecast"].max()),
             },
             "test_characteristics": {
                 "test_days": len(test_df),
@@ -54,7 +54,7 @@ def evaluate_models(artifacts_dir: str, output_path: str):
         }
 
         # Check for anomalies in forecast
-        forecast_values = forecast_df["yhat"].values
+        forecast_values = forecast_df["forecast"].values
         location_eval["quality_checks"] = {
             "has_negatives": bool((forecast_values < 0).any()),
             "has_nans": bool(pd.isna(forecast_values).any()),
