@@ -7,7 +7,8 @@ import json
 import sys
 import time
 from datetime import datetime
-
+from zipfile import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import get_project_config
 
 try:

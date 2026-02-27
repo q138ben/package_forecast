@@ -35,10 +35,10 @@ def check_drift(artifacts_dir: str, output_path: str):
 
         # Analyze forecast characteristics
         location_drift = {
-            "forecast_mean": float(forecast_df["yhat"].mean()),
-            "forecast_std": float(forecast_df["yhat"].std()),
-            "forecast_min": float(forecast_df["yhat"].min()),
-            "forecast_max": float(forecast_df["yhat"].max()),
+            "forecast_mean": float(forecast_df["forecast"].mean()),
+            "forecast_std": float(forecast_df["forecast"].std()),
+            "forecast_min": float(forecast_df["forecast"].min()),
+            "forecast_max": float(forecast_df["forecast"].max()),
         }
 
         # Compare with training statistics
