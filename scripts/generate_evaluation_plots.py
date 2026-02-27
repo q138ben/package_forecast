@@ -27,7 +27,7 @@ def generate_plots(artifacts_dir: str, output_dir: str):
             continue
 
         forecast_df = pd.read_csv(forecast_file)
-        forecast_df["ds"] = pd.to_datetime(forecast_df["ds"])
+        forecast_df["ds"] = pd.to_datetime(forecast_df["date"])
 
         # Create figure with multiple subplots
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
@@ -36,12 +36,12 @@ def generate_plots(artifacts_dir: str, output_dir: str):
         # Plot 1: Forecast with confidence intervals
         ax1 = axes[0, 0]
         ax1.plot(
-            forecast_df["ds"], forecast_df["yhat"], "b-", label="Forecast", linewidth=2
+            forecast_df["ds"], forecast_df["forecast"], "b-", label="Forecast", linewidth=2
         )
         ax1.fill_between(
             forecast_df["ds"],
-            forecast_df["yhat_lower"],
-            forecast_df["yhat_upper"],
+            forecast_df["lower_bound"],
+            forecast_df["upper_bound"],
             alpha=0.3,
             label="95% Confidence Interval",
         )
@@ -62,12 +62,12 @@ def generate_plots(artifacts_dir: str, output_dir: str):
 
         # Plot 2: Forecast distribution
         ax2 = axes[0, 1]
-        ax2.hist(forecast_df["yhat"], bins=20, edgecolor="black", alpha=0.7)
+        ax2.hist(forecast_df["forecast"], bins=20, edgecolor="black", alpha=0.7)
         ax2.axvline(
-            forecast_df["yhat"].mean(),
+            forecast_df["forecast"].mean(),
             color="r",
             linestyle="--",
-            label=f"Mean: {forecast_df['yhat'].mean():.1f}",
+            label=f"Mean: {forecast_df['forecast'].mean():.1f}",
         )
         ax2.set_xlabel("Forecast Value")
         ax2.set_ylabel("Frequency")
@@ -83,10 +83,10 @@ def generate_plots(artifacts_dir: str, output_dir: str):
             test_df["ds"] = pd.to_datetime(test_df["ds"])
 
             # Merge on date to get predictions for test period
-            merged = test_df.merge(forecast_df[["ds", "yhat"]], on="ds", how="inner")
+            merged = test_df.merge(forecast_df[["ds", "forecast"]], on="ds", how="inner")
 
             if len(merged) > 0:
-                ax3.scatter(merged["y"], merged["yhat"], alpha=0.6)
+                ax3.scatter(merged["y"], merged["forecast"], alpha=0.6)
                 ax3.plot(
                     [merged["y"].min(), merged["y"].max()],
                     [merged["y"].min(), merged["y"].max()],
@@ -120,7 +120,7 @@ def generate_plots(artifacts_dir: str, output_dir: str):
         # Plot 4: Residuals (if test data available)
         if test_file.exists() and len(merged) > 0:
             ax4 = axes[1, 1]
-            residuals = merged["y"] - merged["yhat"]
+            residuals = merged["y"] - merged["forecast"]
             ax4.scatter(range(len(residuals)), residuals, alpha=0.6)
             ax4.axhline(0, color="r", linestyle="--")
             ax4.set_xlabel("Observation")
