@@ -1,9 +1,6 @@
 name: Monitoring & Alerts
 
 on:
-  schedule:
-    # Check every 6 hours
-    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 env:
