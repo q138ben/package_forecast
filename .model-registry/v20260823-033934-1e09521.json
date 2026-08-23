@@ -1,0 +1,57 @@
+{
+  "version": "v20260823-033934-1e09521",
+  "timestamp": "2026-08-23T03:40:19.598120",
+  "git_commit": "1e0952176f524e8a710429d4b3a7cd5ec639c723",
+  "metrics": {
+    "location_A": {
+      "rmse": 5392.145733991633,
+      "mae": 3477.726658954977,
+      "wape": 17.146158043115168,
+      "interval_coverage": 80.0,
+      "cv_avg_rmse": 3113.9604390773975,
+      "cv_avg_mae": 2228.4186190880123,
+      "training_days": 0,
+      "test_days": 0
+    },
+    "location_B": {
+      "rmse": 1504.10854467299,
+      "mae": 1171.4583263107056,
+      "wape": 12.078591756680897,
+      "interval_coverage": 96.66666666666667,
+      "cv_avg_rmse": 1360.3877838457836,
+      "cv_avg_mae": 971.3313089631893,
+      "training_days": 0,
+      "test_days": 0
+    },
+    "location_C": {
+      "rmse": 702.5511825016464,
+      "mae": 590.4928510738049,
+      "wape": 10.571131797450812,
+      "interval_coverage": 100.0,
+      "cv_avg_rmse": 1950.2614565347656,
+      "cv_avg_mae": 1349.2169084611041,
+      "training_days": 0,
+      "test_days": 0
+    },
+    "summary": {
+      "average_rmse": 2532.93515372209,
+      "average_mae": 1746.5592787798294,
+      "average_wape": 13.265293865748959
+    }
+  },
+  "artifacts_location": "gs://package-forecast-artifacts/v20260823-033934-1e09521",
+  "status": "production_candidate",
+  "trained_locations": [
+    "A",
+    "B",
+    "C"
+  ],
+  "model_type": "prophet",
+  "metadata": {
+    "training_framework": "prophet",
+    "horizon_days": 30,
+    "cv_folds": 5,
+    "test_days": 30
+  },
+  "promotion_notes": "Model meets production quality thresholds"
+}
